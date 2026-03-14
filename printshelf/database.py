@@ -60,7 +60,277 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_items_root_path ON items(root_path);
                 CREATE INDEX IF NOT EXISTS idx_items_relative_path ON items(relative_path);
                 CREATE INDEX IF NOT EXISTS idx_item_tags_item_id ON item_tags(item_id);
+
+                CREATE TABLE IF NOT EXISTS scan_state (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    status TEXT NOT NULL DEFAULT 'idle',
+                    run_id TEXT NOT NULL DEFAULT '',
+                    owner_token TEXT NOT NULL DEFAULT '',
+                    root_path TEXT NOT NULL DEFAULT '',
+                    total_files INTEGER NOT NULL DEFAULT 0,
+                    scanned INTEGER NOT NULL DEFAULT 0,
+                    changed INTEGER NOT NULL DEFAULT 0,
+                    reused INTEGER NOT NULL DEFAULT 0,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    progress_percent REAL NOT NULL DEFAULT 0,
+                    message TEXT NOT NULL DEFAULT '',
+                    error TEXT NOT NULL DEFAULT '',
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    restart_requested INTEGER NOT NULL DEFAULT 0,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """)
+            conn.execute(
+                "INSERT INTO scan_state(id) VALUES (1) ON CONFLICT(id) DO NOTHING"
+            )
+
+    def _coerce_scan_state(self, row: sqlite3.Row) -> dict[str, Any]:
+        payload = dict(row)
+        payload["cancel_requested"] = bool(payload.get("cancel_requested"))
+        payload["restart_requested"] = bool(payload.get("restart_requested"))
+        return payload
+
+    def get_scan_state(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM scan_state WHERE id = 1").fetchone()
+            if row is None:
+                raise RuntimeError("scan_state row is missing")
+            return self._coerce_scan_state(row)
+
+    def start_scan_run(self, run_id: str, root_path: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'counting',
+                    run_id = ?,
+                    owner_token = '',
+                    root_path = ?,
+                    total_files = 0,
+                    scanned = 0,
+                    changed = 0,
+                    reused = 0,
+                    deleted = 0,
+                    progress_percent = 0,
+                    message = 'Counting files...',
+                    error = '',
+                    cancel_requested = 0,
+                    restart_requested = 0,
+                    started_at = CURRENT_TIMESTAMP,
+                    finished_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                  AND status IN ('idle', 'completed', 'failed')
+                """,
+                (run_id, root_path),
+            )
+            return cursor.rowcount > 0
+
+    def request_scan_restart(self, root_path: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'canceling',
+                    root_path = ?,
+                    cancel_requested = 1,
+                    restart_requested = 1,
+                    message = 'Restart requested. Waiting for current file to finish...',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                  AND status IN ('counting', 'running', 'canceling')
+                """,
+                (root_path,),
+            )
+            return cursor.rowcount > 0
+
+    def claim_scan_owner(self, run_id: str, owner_token: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET owner_token = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                  AND run_id = ?
+                  AND (owner_token = '' OR owner_token = ?)
+                """,
+                (owner_token, run_id, owner_token),
+            )
+            return cursor.rowcount > 0
+
+    def is_scan_cancel_requested(self, run_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT run_id, cancel_requested FROM scan_state WHERE id = 1"
+            ).fetchone()
+            if row is None:
+                return False
+            return str(row["run_id"]) == run_id and bool(row["cancel_requested"])
+
+    def update_scan_progress(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        total_files: int,
+        scanned: int,
+        changed: int,
+        reused: int,
+        deleted: int,
+        progress_percent: float,
+        message: str,
+    ) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = ?,
+                    total_files = ?,
+                    scanned = ?,
+                    changed = ?,
+                    reused = ?,
+                    deleted = ?,
+                    progress_percent = ?,
+                    message = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1 AND run_id = ?
+                """,
+                (
+                    status,
+                    int(total_files),
+                    int(scanned),
+                    int(changed),
+                    int(reused),
+                    int(deleted),
+                    float(progress_percent),
+                    message,
+                    run_id,
+                ),
+            )
+            return cursor.rowcount > 0
+
+    def mark_scan_canceling(self, run_id: str, message: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET status = 'canceling', message = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1 AND run_id = ?
+                """,
+                (message, run_id),
+            )
+            return cursor.rowcount > 0
+
+    def complete_scan_run(
+        self, run_id: str, result: dict[str, Any], message: str
+    ) -> bool:
+        total_files = int(result.get("total_files", result.get("scanned", 0)))
+        scanned = int(result.get("scanned", 0))
+        changed = int(result.get("changed", 0))
+        reused = int(result.get("reused", 0))
+        deleted = int(result.get("deleted", 0))
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'completed',
+                    total_files = ?,
+                    scanned = ?,
+                    changed = ?,
+                    reused = ?,
+                    deleted = ?,
+                    progress_percent = ?,
+                    message = ?,
+                    error = '',
+                    cancel_requested = 0,
+                    restart_requested = 0,
+                    finished_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1 AND run_id = ? AND cancel_requested = 0
+                """,
+                (
+                    total_files,
+                    scanned,
+                    changed,
+                    reused,
+                    deleted,
+                    100.0 if total_files >= 0 else 0.0,
+                    message,
+                    run_id,
+                ),
+            )
+            return cursor.rowcount > 0
+
+    def fail_scan_run(self, run_id: str, error_message: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'failed',
+                    error = ?,
+                    message = 'Scan failed.',
+                    cancel_requested = 0,
+                    restart_requested = 0,
+                    finished_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1 AND run_id = ?
+                """,
+                (error_message, run_id),
+            )
+            return cursor.rowcount > 0
+
+    def claim_restart_run(
+        self, previous_run_id: str, new_run_id: str, owner_token: str
+    ) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT root_path
+                FROM scan_state
+                WHERE id = 1 AND run_id = ? AND restart_requested = 1
+                """,
+                (previous_run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+
+            root_path = str(row["root_path"] or "")
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'counting',
+                    run_id = ?,
+                    owner_token = ?,
+                    total_files = 0,
+                    scanned = 0,
+                    changed = 0,
+                    reused = 0,
+                    deleted = 0,
+                    progress_percent = 0,
+                    message = 'Counting files...',
+                    error = '',
+                    cancel_requested = 0,
+                    restart_requested = 0,
+                    started_at = CURRENT_TIMESTAMP,
+                    finished_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                  AND run_id = ?
+                  AND restart_requested = 1
+                """,
+                (new_run_id, owner_token, previous_run_id),
+            )
+            if cursor.rowcount <= 0:
+                return None
+            return root_path
 
     def get_setting(self, key: str, default: str = "") -> str:
         with self._connect() as conn:

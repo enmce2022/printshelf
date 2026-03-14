@@ -2,9 +2,12 @@ const state = {
   items: [],
   selectedItemId: null,
   hasBridge: false,
+  scanPollTimer: null,
+  lastLoadedRunId: null,
 };
 
 const $ = (id) => document.getElementById(id);
+const ACTIVE_SCAN_STATUSES = new Set(["counting", "running", "canceling"]);
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return "";
@@ -37,7 +40,7 @@ async function api(path, options = {}) {
     try {
       const payload = await response.json();
       if (payload?.detail) message = payload.detail;
-    } catch (_) { }
+    } catch (_) {}
     throw new Error(message);
   }
   return response.json();
@@ -177,14 +180,64 @@ async function browseRoot() {
   $("rootPathInput").value = result.root_path || $("rootPathInput").value || "";
 }
 
+function scanStatusText(scan) {
+  const status = String(scan?.status || "idle");
+  const message = String(scan?.message || "");
+  const error = String(scan?.error || "");
+
+  if (status === "failed") {
+    return error || message || "Scan failed.";
+  }
+  if (ACTIVE_SCAN_STATUSES.has(status) || status === "completed") {
+    return message || "Scanning...";
+  }
+  return "No scan started yet.";
+}
+
+function applyScanStatus(scan) {
+  const status = String(scan?.status || "idle");
+  const runId = String(scan?.run_id || "");
+  const isActive = ACTIVE_SCAN_STATUSES.has(status);
+
+  $("scanButton").textContent = isActive ? "Restart scan" : "Scan library";
+  $("scanStatus").textContent = scanStatusText(scan);
+
+  if (!isActive && status === "completed" && runId && runId !== state.lastLoadedRunId) {
+    state.lastLoadedRunId = runId;
+    loadItems().catch((error) => {
+      $("scanStatus").textContent = error.message;
+    });
+  }
+
+  if (!isActive && state.scanPollTimer) {
+    clearInterval(state.scanPollTimer);
+    state.scanPollTimer = null;
+  }
+}
+
+async function pollScanStatus() {
+  const scan = await api("/api/scan/status");
+  applyScanStatus(scan);
+  return scan;
+}
+
+function ensureScanPolling() {
+  if (state.scanPollTimer) return;
+  state.scanPollTimer = setInterval(() => {
+    pollScanStatus().catch((error) => {
+      $("scanStatus").textContent = error.message;
+    });
+  }, 500);
+}
+
 async function scanLibrary() {
-  $("scanStatus").textContent = "Scanning library…";
   $("scanButton").disabled = true;
   try {
     await saveRootPath();
-    const result = await api("/api/scan", { method: "POST" });
-    $("scanStatus").textContent = `Scan complete. ${result.scanned} files found, ${result.changed} updated, ${result.reused} reused, ${result.deleted} removed.`;
-    await loadItems();
+    const scan = await api("/api/scan", { method: "POST" });
+    applyScanStatus(scan);
+    ensureScanPolling();
+    await pollScanStatus();
   } catch (error) {
     $("scanStatus").textContent = error.message;
   } finally {
@@ -228,6 +281,14 @@ async function init() {
 
   await loadConfig();
   await loadItems();
+  try {
+    const scan = await pollScanStatus();
+    if (ACTIVE_SCAN_STATUSES.has(String(scan?.status || ""))) {
+      ensureScanPolling();
+    }
+  } catch (error) {
+    $("scanStatus").textContent = error.message;
+  }
 }
 
 window.addEventListener("DOMContentLoaded", () => {

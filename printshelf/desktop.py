@@ -42,7 +42,7 @@ class NativeBridge:
         return {"root_path": self._service.get_root_path()}
 
     def scan_now(self) -> dict[str, Any]:
-        return self._service.scan()
+        return self._service.request_scan()
 
 
 def run_desktop_app() -> None:

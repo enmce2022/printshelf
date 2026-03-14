@@ -48,9 +48,13 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
     @app.post("/api/scan")
     def scan_library_route() -> dict[str, Any]:
         try:
-            return service.scan()
+            return service.request_scan()
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/scan/status")
+    def scan_status_route() -> dict[str, Any]:
+        return service.get_scan_status()
 
     @app.get("/api/items")
     def list_items(
