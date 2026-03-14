@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PrintShelf</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <h1>PrintShelf</h1>
+          <p>Browse STL and G-code files with previews, tags, and notes.</p>
+        </div>
+
+        <section class="panel">
+          <h2>Library</h2>
+          <label class="field">
+            <span>Root folder</span>
+            <input id="rootPathInput" type="text" placeholder="Select or paste a folder path">
+          </label>
+          <div class="row">
+            <button id="saveRootButton" class="button secondary">Save path</button>
+            <button id="browseButton" class="button">Browse</button>
+          </div>
+          <div class="row">
+            <button id="scanButton" class="button primary">Scan library</button>
+          </div>
+          <p id="scanStatus" class="muted">No scan started yet.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Browse</h2>
+          <label class="field">
+            <span>Search</span>
+            <input id="searchInput" type="search" placeholder="Search by name, path, tag, description">
+          </label>
+          <label class="field">
+            <span>Type</span>
+            <select id="typeFilter">
+              <option value="">All files</option>
+              <option value="stl">STL</option>
+              <option value="gcode">G-code</option>
+            </select>
+          </label>
+          <p id="resultCount" class="muted">0 items</p>
+        </section>
+      </aside>
+
+      <main class="content">
+        <section class="catalog">
+          <div id="catalogGrid" class="catalog-grid"></div>
+          <div id="emptyState" class="empty-state hidden">
+            <h2>No items yet</h2>
+            <p>Select a library folder and run a scan. The catalog will appear here.</p>
+          </div>
+        </section>
+
+        <section class="detail panel">
+          <div id="detailEmpty" class="detail-empty">
+            <h2>Select an item</h2>
+            <p>Click a card to edit tags, notes, and custom metadata.</p>
+          </div>
+
+          <div id="detailView" class="hidden">
+            <div class="detail-header">
+              <h2 id="detailTitle"></h2>
+              <span id="detailType" class="pill"></span>
+            </div>
+
+            <div class="preview-wrap">
+              <img id="detailPreview" alt="Preview">
+            </div>
+
+            <dl class="meta-list">
+              <div><dt>Path</dt><dd id="detailPath"></dd></div>
+              <div><dt>Preview source</dt><dd id="detailPreviewSource"></dd></div>
+              <div><dt>File size</dt><dd id="detailSize"></dd></div>
+            </dl>
+
+            <label class="field">
+              <span>Tags</span>
+              <input id="tagsInput" type="text" placeholder="comma, separated, tags">
+            </label>
+
+            <label class="field">
+              <span>Description</span>
+              <textarea id="descriptionInput" rows="6" placeholder="Notes about this file"></textarea>
+            </label>
+
+            <label class="field">
+              <span>Custom metadata (JSON)</span>
+              <textarea id="metaInput" rows="8" placeholder='{"material": "PETG", "printer": "Voron"}'></textarea>
+            </label>
+
+            <div class="row">
+              <button id="saveItemButton" class="button primary">Save changes</button>
+            </div>
+
+            <div class="generated-meta">
+              <h3>Indexed metadata</h3>
+              <pre id="indexedMeta"></pre>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
