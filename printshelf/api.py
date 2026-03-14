@@ -28,7 +28,9 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
 
     app = FastAPI(title="PrintShelf", docs_url="/api/docs", redoc_url=None)
     app.mount("/assets", StaticFiles(directory=str(static_dir)), name="assets")
-    app.mount("/previews", StaticFiles(directory=str(service.preview_dir)), name="previews")
+    app.mount(
+        "/previews", StaticFiles(directory=str(service.preview_dir)), name="previews"
+    )
 
     @app.get("/")
     def root() -> FileResponse:
@@ -51,7 +53,9 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/items")
-    def list_items(q: str = "", file_type: str = "", tag: str = "") -> list[dict[str, Any]]:
+    def list_items(
+        q: str = "", file_type: str = "", tag: str = ""
+    ) -> list[dict[str, Any]]:
         return service.list_items(query=q, file_type=file_type, tag=tag)
 
     @app.get("/api/items/{item_id}")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import socket
 import threading
 import time
@@ -54,7 +53,9 @@ def run_desktop_app() -> None:
     port = _find_free_port()
     url = f"http://127.0.0.1:{port}"
 
-    server_config = uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning")
+    server_config = uvicorn.Config(
+        app=app, host="127.0.0.1", port=port, log_level="warning"
+    )
     server = uvicorn.Server(server_config)
 
     thread = threading.Thread(target=server.run, daemon=True)

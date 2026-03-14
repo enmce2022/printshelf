@@ -4,9 +4,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .preview import generate_preview
 from .database import Database
-
+from .preview import generate_preview
 
 SUPPORTED_EXTENSIONS = {".stl": "stl", ".gcode": "gcode"}
 
@@ -24,7 +23,11 @@ def scan_library(root_path: Path, preview_dir: Path, db: Database) -> dict[str, 
     reused = 0
 
     for current_root, dirnames, filenames in os.walk(root_path):
-        dirnames[:] = [name for name in dirnames if name not in {".git", "__pycache__", ".venv", "node_modules"}]
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if name not in {".git", "__pycache__", ".venv", "node_modules"}
+        ]
         current_root_path = Path(current_root)
 
         for filename in filenames:
@@ -59,6 +62,7 @@ def scan_library(root_path: Path, preview_dir: Path, db: Database) -> dict[str, 
                 reused += 1
                 try:
                     import json
+
                     indexed_meta = json.loads(existing.get("indexed_meta_json") or "{}")
                 except Exception:
                     indexed_meta = {}

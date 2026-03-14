@@ -3,20 +3,19 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-import json
 import math
 import re
 from pathlib import Path
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
-from PIL import Image, ImageDraw
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
-
+from PIL import Image, ImageDraw
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 THUMB_START_RE = re.compile(
@@ -30,7 +29,9 @@ THUMB_END_RE = re.compile(
 
 
 def _preview_name(file_path: Path, modified_at: int) -> str:
-    digest = hashlib.sha1(f"{file_path.resolve()}::{modified_at}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha1(
+        f"{file_path.resolve()}::{modified_at}".encode("utf-8")
+    ).hexdigest()
     return f"{digest}.png"
 
 
@@ -38,7 +39,9 @@ def _placeholder_preview(output_path: Path, title: str, subtitle: str = "") -> N
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGBA", (640, 480), (245, 247, 250, 255))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((28, 28, 612, 452), radius=24, outline=(180, 186, 194, 255), width=3)
+    draw.rounded_rectangle(
+        (28, 28, 612, 452), radius=24, outline=(180, 186, 194, 255), width=3
+    )
     draw.text((48, 72), title[:40], fill=(43, 51, 59, 255))
     if subtitle:
         draw.text((48, 128), subtitle[:120], fill=(89, 99, 110, 255))
@@ -61,7 +64,9 @@ def _load_mesh(file_path: Path) -> trimesh.Trimesh:
     loaded = trimesh.load(file_path, force="mesh", process=True)
     if isinstance(loaded, trimesh.Scene):
         geometries = [
-            geom for geom in loaded.geometry.values() if isinstance(geom, trimesh.Trimesh)
+            geom
+            for geom in loaded.geometry.values()
+            if isinstance(geom, trimesh.Trimesh)
         ]
         if not geometries:
             raise ValueError("Scene contains no mesh geometry")
@@ -84,7 +89,9 @@ def render_stl_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
 
     if mesh.is_watertight:
         try:
-            transforms, _ = trimesh.poses.compute_stable_poses(mesh, n_samples=1, threshold=0.0)
+            transforms, _ = trimesh.poses.compute_stable_poses(
+                mesh, n_samples=1, threshold=0.0
+            )
             if len(transforms):
                 mesh.apply_transform(transforms[0])
         except Exception:
@@ -93,7 +100,11 @@ def render_stl_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     mesh.apply_translation(-mesh.bounds.mean(axis=0))
 
     triangles = mesh.triangles
-    normals = mesh.face_normals if len(mesh.face_normals) == len(mesh.faces) else np.zeros((len(mesh.faces), 3))
+    normals = (
+        mesh.face_normals
+        if len(mesh.face_normals) == len(mesh.faces)
+        else np.zeros((len(mesh.faces), 3))
+    )
     light = np.array([0.4, -0.5, 1.0], dtype=float)
     light /= np.linalg.norm(light)
     intensity = np.clip(normals @ light, 0.18, 1.0)
@@ -149,8 +160,7 @@ def _extract_largest_png_thumbnail(file_path: Path) -> bytes | None:
             if current_kind is not None:
                 if THUMB_END_RE.match(line):
                     cleaned = "".join(
-                        re.sub(r"^\s*;\s?", "", part).strip()
-                        for part in current_lines
+                        re.sub(r"^\s*;\s?", "", part).strip() for part in current_lines
                     )
                     try:
                         raw = base64.b64decode(cleaned, validate=False)
@@ -209,7 +219,9 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     absolute_axes = True
     e_override: bool | None = None
     extrusion_length = 0.0
-    segments: list[tuple[tuple[float, float, float], tuple[float, float, float], float]] = []
+    segments: list[
+        tuple[tuple[float, float, float], tuple[float, float, float], float]
+    ] = []
     metadata: dict[str, Any] = {}
     unique_z: set[float] = set()
 
@@ -264,13 +276,19 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
             nxt = dict(current)
             for axis in ("X", "Y", "Z"):
                 if axis in params:
-                    nxt[axis] = params[axis] if absolute_axes else current[axis] + params[axis]
+                    nxt[axis] = (
+                        params[axis] if absolute_axes else current[axis] + params[axis]
+                    )
             absolute_e = absolute_axes if e_override is None else e_override
             if "E" in params:
                 nxt["E"] = params["E"] if absolute_e else current["E"] + params["E"]
 
             delta_e = nxt["E"] - current["E"]
-            moved = (nxt["X"], nxt["Y"], nxt["Z"]) != (current["X"], current["Y"], current["Z"])
+            moved = (nxt["X"], nxt["Y"], nxt["Z"]) != (
+                current["X"],
+                current["Y"],
+                current["Z"],
+            )
             extruding = delta_e > 1e-6 and moved
 
             if extruding:
@@ -322,13 +340,18 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
             "segment_count_previewed": len(segments),
             "layer_count_estimate": len(unique_z),
             "extrusion_length_mm": round(extrusion_length, 3),
-            "toolpath_bounds_mm": [round(float(v), 3) for v in (points.max(axis=0) - points.min(axis=0)).tolist()],
+            "toolpath_bounds_mm": [
+                round(float(v), 3)
+                for v in (points.max(axis=0) - points.min(axis=0)).tolist()
+            ],
         }
     )
     return metadata
 
 
-def generate_preview(file_path: Path, preview_dir: Path, modified_at: int) -> tuple[str | None, str, dict[str, Any]]:
+def generate_preview(
+    file_path: Path, preview_dir: Path, modified_at: int
+) -> tuple[str | None, str, dict[str, Any]]:
     preview_name = _preview_name(file_path, modified_at)
     output_path = preview_dir / preview_name
     file_type = file_path.suffix.lower().lstrip(".")

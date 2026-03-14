@@ -20,8 +20,7 @@ class Database:
 
     def _init_db(self) -> None:
         with self._connect() as conn:
-            conn.executescript(
-                '''
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -61,22 +60,23 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_items_root_path ON items(root_path);
                 CREATE INDEX IF NOT EXISTS idx_items_relative_path ON items(relative_path);
                 CREATE INDEX IF NOT EXISTS idx_item_tags_item_id ON item_tags(item_id);
-                '''
-            )
+                """)
 
     def get_setting(self, key: str, default: str = "") -> str:
         with self._connect() as conn:
-            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
             return row["value"] if row else default
 
     def set_setting(self, key: str, value: str) -> None:
         with self._connect() as conn:
             conn.execute(
-                '''
+                """
                 INSERT INTO settings(key, value)
                 VALUES (?, ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                ''',
+                """,
                 (key, value),
             )
 
@@ -90,13 +90,13 @@ class Database:
 
     def _fetch_tags_for_item(self, conn: sqlite3.Connection, item_id: int) -> list[str]:
         rows = conn.execute(
-            '''
+            """
             SELECT t.name
             FROM tags t
             JOIN item_tags it ON it.tag_id = t.id
             WHERE it.item_id = ?
             ORDER BY t.name COLLATE NOCASE
-            ''',
+            """,
             (item_id,),
         ).fetchall()
         return [row["name"] for row in rows]
@@ -104,7 +104,7 @@ class Database:
     def upsert_item(self, payload: dict[str, Any]) -> int:
         with self._connect() as conn:
             conn.execute(
-                '''
+                """
                 INSERT INTO items (
                     path, root_path, relative_path, filename, file_type,
                     size_bytes, modified_at, preview_rel_path, preview_source,
@@ -124,7 +124,7 @@ class Database:
                     meta_json = COALESCE(items.meta_json, '{}'),
                     indexed_meta_json = excluded.indexed_meta_json,
                     updated_at = CURRENT_TIMESTAMP
-                ''',
+                """,
                 (
                     payload["path"],
                     payload["root_path"],
@@ -177,21 +177,20 @@ class Database:
                         "INSERT OR IGNORE INTO item_tags(item_id, tag_id) VALUES (?, ?)",
                         (item_id, int(row["id"])),
                     )
-            conn.execute(
-                '''
+            conn.execute("""
                 DELETE FROM tags
                 WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)
-                '''
-            )
+                """)
 
-    def list_items(self, query: str = "", file_type: str = "", tag: str = "") -> list[dict[str, Any]]:
+    def list_items(
+        self, query: str = "", file_type: str = "", tag: str = ""
+    ) -> list[dict[str, Any]]:
         where: list[str] = []
         params: list[Any] = []
 
         if query:
             like = f"%{query.strip()}%"
-            where.append(
-                '''
+            where.append("""
                 (
                     i.filename LIKE ? COLLATE NOCASE OR
                     i.relative_path LIKE ? COLLATE NOCASE OR
@@ -205,8 +204,7 @@ class Database:
                           AND t2.name LIKE ? COLLATE NOCASE
                     )
                 )
-                '''
-            )
+                """)
             params.extend([like, like, like, like, like])
 
         if file_type:
@@ -214,8 +212,7 @@ class Database:
             params.append(file_type)
 
         if tag:
-            where.append(
-                '''
+            where.append("""
                 EXISTS (
                     SELECT 1
                     FROM item_tags it3
@@ -223,14 +220,13 @@ class Database:
                     WHERE it3.item_id = i.id
                       AND t3.name = ? COLLATE NOCASE
                 )
-                '''
-            )
+                """)
             params.append(tag)
 
-        sql = '''
+        sql = """
             SELECT i.*
             FROM items i
-        '''
+        """
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY i.modified_at DESC, i.filename COLLATE NOCASE"
@@ -256,14 +252,16 @@ class Database:
             item["tags"] = self._fetch_tags_for_item(conn, item_id)
             return item
 
-    def update_item(self, item_id: int, description: str, meta: dict[str, Any], tags: list[str]) -> dict[str, Any] | None:
+    def update_item(
+        self, item_id: int, description: str, meta: dict[str, Any], tags: list[str]
+    ) -> dict[str, Any] | None:
         with self._connect() as conn:
             conn.execute(
-                '''
+                """
                 UPDATE items
                 SET description = ?, meta_json = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-                ''',
+                """,
                 (description, json.dumps(meta, ensure_ascii=False), item_id),
             )
         self.set_tags(item_id, tags)
@@ -290,10 +288,8 @@ class Database:
                     chunk,
                 )
                 deleted += cursor.rowcount
-            conn.execute(
-                '''
+            conn.execute("""
                 DELETE FROM tags
                 WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)
-                '''
-            )
+                """)
         return deleted

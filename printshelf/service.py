@@ -64,7 +64,9 @@ class PrintShelfService:
             "indexed_meta": indexed_meta,
         }
 
-    def list_items(self, query: str = "", file_type: str = "", tag: str = "") -> list[dict[str, Any]]:
+    def list_items(
+        self, query: str = "", file_type: str = "", tag: str = ""
+    ) -> list[dict[str, Any]]:
         rows = self.db.list_items(query=query, file_type=file_type, tag=tag)
         return [self._serialize_item(row) for row in rows]
 
@@ -72,6 +74,10 @@ class PrintShelfService:
         row = self.db.get_item(item_id)
         return self._serialize_item(row) if row else None
 
-    def update_item(self, item_id: int, description: str, tags: list[str], meta: dict[str, Any]) -> dict[str, Any] | None:
-        updated = self.db.update_item(item_id=item_id, description=description, tags=tags, meta=meta)
+    def update_item(
+        self, item_id: int, description: str, tags: list[str], meta: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        updated = self.db.update_item(
+            item_id=item_id, description=description, tags=tags, meta=meta
+        )
         return self._serialize_item(updated) if updated else None
