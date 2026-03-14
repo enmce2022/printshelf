@@ -231,9 +231,13 @@ class PrintShelfService:
         }
 
     def list_items(
-        self, query: str = "", file_type: str = "", tag: str = ""
+        self,
+        query: str = "",
+        file_type: str = "",
+        tag: str = "",
+        sort: str = "date_added_desc",
     ) -> list[dict[str, Any]]:
-        rows = self.db.list_items(query=query, file_type=file_type, tag=tag)
+        rows = self.db.list_items(query=query, file_type=file_type, tag=tag, sort=sort)
         return [self._serialize_item(row) for row in rows]
 
     def get_item(self, item_id: int) -> dict[str, Any] | None:

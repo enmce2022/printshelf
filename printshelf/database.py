@@ -453,10 +453,25 @@ class Database:
                 """)
 
     def list_items(
-        self, query: str = "", file_type: str = "", tag: str = ""
+        self,
+        query: str = "",
+        file_type: str = "",
+        tag: str = "",
+        sort: str = "date_added_desc",
     ) -> list[dict[str, Any]]:
         where: list[str] = []
         params: list[Any] = []
+        order_by_map = {
+            "date_added_desc": (
+                "i.created_at DESC, i.filename COLLATE NOCASE ASC, i.id ASC"
+            ),
+            "date_added_asc": (
+                "i.created_at ASC, i.filename COLLATE NOCASE ASC, i.id ASC"
+            ),
+            "name_asc": "i.filename COLLATE NOCASE ASC, i.created_at DESC, i.id ASC",
+            "name_desc": "i.filename COLLATE NOCASE DESC, i.created_at DESC, i.id ASC",
+        }
+        order_by = order_by_map.get(sort, order_by_map["date_added_desc"])
 
         if query:
             like = f"%{query.strip()}%"
@@ -499,7 +514,7 @@ class Database:
         """
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY i.modified_at DESC, i.filename COLLATE NOCASE"
+        sql += f" ORDER BY {order_by}"
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()

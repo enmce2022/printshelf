@@ -44,6 +44,15 @@
               <option value="gcode">G-code</option>
             </select>
           </label>
+          <label class="field">
+            <span>Sort</span>
+            <select id="sortFilter">
+              <option value="date_added_desc" selected>Date added: newest first</option>
+              <option value="date_added_asc">Date added: oldest first</option>
+              <option value="name_asc">Name: A to Z</option>
+              <option value="name_desc">Name: Z to A</option>
+            </select>
+          </label>
           <p id="resultCount" class="muted">0 items</p>
         </section>
       </aside>

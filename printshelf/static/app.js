@@ -54,7 +54,8 @@ async function loadConfig() {
 async function loadItems() {
   const q = encodeURIComponent($("searchInput").value.trim());
   const fileType = encodeURIComponent($("typeFilter").value);
-  const items = await api(`/api/items?q=${q}&file_type=${fileType}`);
+  const sort = encodeURIComponent($("sortFilter").value || "date_added_desc");
+  const items = await api(`/api/items?q=${q}&file_type=${fileType}&sort=${sort}`);
   state.items = items;
   renderCatalog();
   $("resultCount").textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
@@ -275,6 +276,7 @@ async function init() {
   }));
   $("searchInput").addEventListener("input", queueSearch);
   $("typeFilter").addEventListener("change", queueSearch);
+  $("sortFilter").addEventListener("change", queueSearch);
 
   detectBridge();
   setInterval(detectBridge, 1000);

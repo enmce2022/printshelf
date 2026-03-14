@@ -58,9 +58,9 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
 
     @app.get("/api/items")
     def list_items(
-        q: str = "", file_type: str = "", tag: str = ""
+        q: str = "", file_type: str = "", tag: str = "", sort: str = "date_added_desc"
     ) -> list[dict[str, Any]]:
-        return service.list_items(query=q, file_type=file_type, tag=tag)
+        return service.list_items(query=q, file_type=file_type, tag=tag, sort=sort)
 
     @app.get("/api/items/{item_id}")
     def get_item(item_id: int) -> dict[str, Any]:
