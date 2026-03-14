@@ -64,6 +64,83 @@ export WEB_CONCURRENCY=2
 python run.py
 ```
 
+## Data location and reset
+
+PrintShelf stores local app data in your home directory:
+
+- Base data directory: `~/.printshelf`
+- SQLite database: `~/.printshelf/printshelf.sqlite3`
+- Preview cache: `~/.printshelf/previews/`
+
+Reset options:
+
+- Soft reset: delete only `printshelf.sqlite3` (keeps cached previews).
+- Full reset: delete the entire `~/.printshelf` directory (removes DB, previews, and scan state).
+
+Before resetting, close/stop PrintShelf.
+
+### Soft reset (keep preview cache)
+
+```powershell
+# Windows PowerShell
+Remove-Item "$HOME\.printshelf\printshelf.sqlite3" -Force
+```
+
+```cmd
+:: Windows Command Prompt (CMD)
+del "%USERPROFILE%\.printshelf\printshelf.sqlite3"
+```
+
+```bash
+# macOS/Linux
+rm -f ~/.printshelf/printshelf.sqlite3
+```
+
+Optional verification:
+
+```powershell
+Test-Path "$HOME\.printshelf\printshelf.sqlite3"
+```
+
+```cmd
+if exist "%USERPROFILE%\.printshelf\printshelf.sqlite3" (echo EXISTS) else (echo MISSING)
+```
+
+```bash
+test -f ~/.printshelf/printshelf.sqlite3 && echo EXISTS || echo MISSING
+```
+
+### Full reset (remove all PrintShelf local data)
+
+```powershell
+# Windows PowerShell
+Remove-Item "$HOME\.printshelf" -Recurse -Force
+```
+
+```cmd
+:: Windows Command Prompt (CMD)
+rmdir /s /q "%USERPROFILE%\.printshelf"
+```
+
+```bash
+# macOS/Linux
+rm -rf ~/.printshelf
+```
+
+Optional verification:
+
+```powershell
+Test-Path "$HOME\.printshelf"
+```
+
+```cmd
+if exist "%USERPROFILE%\.printshelf" (echo EXISTS) else (echo MISSING)
+```
+
+```bash
+test -d ~/.printshelf && echo EXISTS || echo MISSING
+```
+
 If pywebview is unavailable on your platform, the app will still start the local server and open the UI in a browser.
 
 ## Notes for Linux
