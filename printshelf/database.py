@@ -60,6 +60,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_items_root_path ON items(root_path);
                 CREATE INDEX IF NOT EXISTS idx_items_relative_path ON items(relative_path);
                 CREATE INDEX IF NOT EXISTS idx_item_tags_item_id ON item_tags(item_id);
+                CREATE INDEX IF NOT EXISTS idx_item_tags_tag_id ON item_tags(tag_id);
 
                 CREATE TABLE IF NOT EXISTS scan_state (
                     id INTEGER PRIMARY KEY CHECK(id = 1),
@@ -371,6 +372,39 @@ class Database:
         ).fetchall()
         return [row["name"] for row in rows]
 
+    @staticmethod
+    def _normalize_tags(tags: Iterable[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in tags:
+            value = str(raw).strip()
+            if not value:
+                continue
+            lowered = value.casefold()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            normalized.append(value)
+        return normalized
+
+    def _fetch_tag_with_count(
+        self, conn: sqlite3.Connection, tag_id: int
+    ) -> dict[str, Any] | None:
+        row = conn.execute(
+            """
+            SELECT
+                t.id,
+                t.name,
+                COUNT(DISTINCT it.item_id) AS item_count
+            FROM tags t
+            LEFT JOIN item_tags it ON it.tag_id = t.id
+            WHERE t.id = ?
+            GROUP BY t.id, t.name
+            """,
+            (tag_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
     def upsert_item(self, payload: dict[str, Any]) -> int:
         with self._connect() as conn:
             conn.execute(
@@ -419,17 +453,7 @@ class Database:
             return int(row["id"])
 
     def set_tags(self, item_id: int, tags: Iterable[str]) -> None:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for raw in tags:
-            value = raw.strip()
-            if not value:
-                continue
-            lowered = value.casefold()
-            if lowered in seen:
-                continue
-            seen.add(lowered)
-            normalized.append(value)
+        normalized = self._normalize_tags(tags)
 
         with self._connect() as conn:
             conn.execute("DELETE FROM item_tags WHERE item_id = ?", (item_id,))
@@ -451,6 +475,151 @@ class Database:
                 DELETE FROM tags
                 WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)
                 """)
+
+    def list_tags(self, query: str = "") -> list[dict[str, Any]]:
+        where = ""
+        params: list[Any] = []
+        trimmed = query.strip()
+        if trimmed:
+            where = "WHERE t.name LIKE ? COLLATE NOCASE"
+            params.append(f"%{trimmed}%")
+
+        sql = f"""
+            SELECT
+                t.id,
+                t.name,
+                COUNT(DISTINCT it.item_id) AS item_count
+            FROM tags t
+            LEFT JOIN item_tags it ON it.tag_id = t.id
+            {where}
+            GROUP BY t.id, t.name
+            ORDER BY t.name COLLATE NOCASE ASC
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(row) for row in rows]
+
+    def rename_tag(self, tag_id: int, new_name: str) -> dict[str, Any] | None:
+        normalized_name = str(new_name).strip()
+        if not normalized_name:
+            raise ValueError("Tag name cannot be empty")
+
+        with self._connect() as conn:
+            source = conn.execute(
+                "SELECT id FROM tags WHERE id = ?",
+                (tag_id,),
+            ).fetchone()
+            if source is None:
+                return None
+
+            existing = conn.execute(
+                "SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+                (normalized_name,),
+            ).fetchone()
+            if existing is not None and int(existing["id"]) != tag_id:
+                target_id = int(existing["id"])
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO item_tags(item_id, tag_id)
+                    SELECT item_id, ?
+                    FROM item_tags
+                    WHERE tag_id = ?
+                    """,
+                    (target_id, tag_id),
+                )
+                conn.execute("DELETE FROM item_tags WHERE tag_id = ?", (tag_id,))
+                conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+                return self._fetch_tag_with_count(conn, target_id)
+
+            conn.execute(
+                "UPDATE tags SET name = ? WHERE id = ?",
+                (normalized_name, tag_id),
+            )
+            return self._fetch_tag_with_count(conn, tag_id)
+
+    def delete_tag(self, tag_id: int) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+            return cursor.rowcount > 0
+
+    def bulk_update_item_tags(
+        self, item_ids: list[int], add_tags: Iterable[str], remove_tags: Iterable[str]
+    ) -> int:
+        seen_item_ids: set[int] = set()
+        normalized_item_ids: list[int] = []
+        for raw in item_ids:
+            try:
+                item_id = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if item_id <= 0 or item_id in seen_item_ids:
+                continue
+            seen_item_ids.add(item_id)
+            normalized_item_ids.append(item_id)
+
+        if not normalized_item_ids:
+            return 0
+
+        normalized_add = self._normalize_tags(add_tags)
+        add_keys = {tag.casefold() for tag in normalized_add}
+        normalized_remove = [
+            tag
+            for tag in self._normalize_tags(remove_tags)
+            if tag.casefold() not in add_keys
+        ]
+
+        with self._connect() as conn:
+            item_placeholders = ",".join("?" for _ in normalized_item_ids)
+            existing_rows = conn.execute(
+                f"SELECT id FROM items WHERE id IN ({item_placeholders})",
+                normalized_item_ids,
+            ).fetchall()
+            existing_item_ids = [int(row["id"]) for row in existing_rows]
+            if not existing_item_ids:
+                return 0
+
+            add_tag_ids: list[int] = []
+            for tag in normalized_add:
+                conn.execute(
+                    "INSERT INTO tags(name) VALUES (?) ON CONFLICT(name) DO NOTHING",
+                    (tag,),
+                )
+                row = conn.execute(
+                    "SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+                    (tag,),
+                ).fetchone()
+                if row is not None:
+                    add_tag_ids.append(int(row["id"]))
+
+            remove_tag_ids: list[int] = []
+            for tag in normalized_remove:
+                row = conn.execute(
+                    "SELECT id FROM tags WHERE name = ? COLLATE NOCASE",
+                    (tag,),
+                ).fetchone()
+                if row is not None:
+                    remove_tag_ids.append(int(row["id"]))
+
+            if remove_tag_ids:
+                remove_placeholders = ",".join("?" for _ in remove_tag_ids)
+                for item_id in existing_item_ids:
+                    conn.execute(
+                        f"DELETE FROM item_tags WHERE item_id = ? AND tag_id IN ({remove_placeholders})",
+                        [item_id, *remove_tag_ids],
+                    )
+
+            if add_tag_ids:
+                for item_id in existing_item_ids:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO item_tags(item_id, tag_id) VALUES (?, ?)",
+                        [(item_id, tag_id) for tag_id in add_tag_ids],
+                    )
+
+            conn.execute("""
+                DELETE FROM tags
+                WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)
+                """)
+            return len(existing_item_ids)
 
     def list_items(
         self,

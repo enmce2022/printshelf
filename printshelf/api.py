@@ -21,6 +21,16 @@ class ItemUpdate(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class TagRenameUpdate(BaseModel):
+    name: str = ""
+
+
+class TagBulkUpdate(BaseModel):
+    item_ids: list[int] = Field(default_factory=list)
+    add_tags: list[str] = Field(default_factory=list)
+    remove_tags: list[str] = Field(default_factory=list)
+
+
 def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
     static_dir = Path(static_dir)
     static_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +71,35 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
         q: str = "", file_type: str = "", tag: str = "", sort: str = "date_added_desc"
     ) -> list[dict[str, Any]]:
         return service.list_items(query=q, file_type=file_type, tag=tag, sort=sort)
+
+    @app.get("/api/tags")
+    def list_tags(q: str = "") -> list[dict[str, Any]]:
+        return service.list_tags(query=q)
+
+    @app.post("/api/tags/bulk-update")
+    def bulk_update_tags(payload: TagBulkUpdate) -> dict[str, Any]:
+        return service.bulk_update_tags(
+            item_ids=payload.item_ids,
+            add_tags=payload.add_tags,
+            remove_tags=payload.remove_tags,
+        )
+
+    @app.patch("/api/tags/{tag_id}")
+    def rename_tag(tag_id: int, payload: TagRenameUpdate) -> dict[str, Any]:
+        try:
+            updated = service.rename_tag(tag_id=tag_id, name=payload.name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not updated:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        return updated
+
+    @app.delete("/api/tags/{tag_id}")
+    def delete_tag(tag_id: int) -> dict[str, Any]:
+        deleted = service.delete_tag(tag_id=tag_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        return {"deleted": True}
 
     @app.get("/api/items/{item_id}")
     def get_item(item_id: int) -> dict[str, Any]:

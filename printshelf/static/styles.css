@@ -51,10 +51,22 @@ body {
 }
 
 .content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 420px;
-  gap: 20px;
   padding: 20px;
+  min-width: 0;
+}
+
+.content-view {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.browse-view {
+  grid-template-columns: minmax(0, 1fr) 420px;
+}
+
+.tags-view {
+  grid-template-columns: 320px minmax(0, 1fr);
 }
 
 .panel {
@@ -120,6 +132,12 @@ textarea {
 
 .button.secondary {
   background: var(--panel-2);
+}
+
+.view-switch .button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #edf4ff;
 }
 
 .button:disabled {
@@ -246,6 +264,95 @@ textarea {
   top: 20px;
 }
 
+.tags-panel,
+.tags-results-panel {
+  min-width: 0;
+}
+
+.tag-explorer-list {
+  display: grid;
+  gap: 8px;
+  max-height: 560px;
+  overflow: auto;
+}
+
+.tag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tag-row.active {
+  border-color: var(--accent);
+  background: #edf4ff;
+}
+
+.tag-row-name {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tag-row-count {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.bulk-controls {
+  margin: 16px 0;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.tagged-items-list {
+  display: grid;
+  gap: 10px;
+}
+
+.tagged-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.tagged-item-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tagged-item-title {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tagged-item-path {
+  color: var(--muted);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.tagged-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .detail-header {
   display: flex;
   gap: 10px;
@@ -308,7 +415,8 @@ textarea {
 }
 
 @media (max-width: 1200px) {
-  .content {
+  .browse-view,
+  .tags-view {
     grid-template-columns: 1fr;
   }
 

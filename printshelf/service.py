@@ -240,6 +240,28 @@ class PrintShelfService:
         rows = self.db.list_items(query=query, file_type=file_type, tag=tag, sort=sort)
         return [self._serialize_item(row) for row in rows]
 
+    def list_tags(self, query: str = "") -> list[dict[str, Any]]:
+        return self.db.list_tags(query=query)
+
+    def rename_tag(self, tag_id: int, name: str) -> dict[str, Any] | None:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Tag name cannot be empty")
+        return self.db.rename_tag(tag_id, normalized_name)
+
+    def delete_tag(self, tag_id: int) -> bool:
+        return self.db.delete_tag(tag_id)
+
+    def bulk_update_tags(
+        self, item_ids: list[int], add_tags: list[str], remove_tags: list[str]
+    ) -> dict[str, Any]:
+        updated_items = self.db.bulk_update_item_tags(
+            item_ids=item_ids,
+            add_tags=add_tags,
+            remove_tags=remove_tags,
+        )
+        return {"updated_items": updated_items}
+
     def get_item(self, item_id: int) -> dict[str, Any] | None:
         row = self.db.get_item(item_id)
         return self._serialize_item(row) if row else None

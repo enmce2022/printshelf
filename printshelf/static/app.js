@@ -4,6 +4,13 @@ const state = {
   hasBridge: false,
   scanPollTimer: null,
   lastLoadedRunId: null,
+  currentView: "browse",
+  tags: [],
+  activeTag: null,
+  taggedItems: [],
+  checkedTagItemIds: new Set(),
+  tagListRequestId: 0,
+  taggedItemsRequestId: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -51,11 +58,17 @@ async function loadConfig() {
   $("rootPathInput").value = config.root_path || "";
 }
 
+function buildItemQueryParams({ tag = "" } = {}) {
+  const params = new URLSearchParams();
+  params.set("q", $("searchInput").value.trim());
+  params.set("file_type", $("typeFilter").value);
+  params.set("sort", $("sortFilter").value || "date_added_desc");
+  if (tag) params.set("tag", tag);
+  return params.toString();
+}
+
 async function loadItems() {
-  const q = encodeURIComponent($("searchInput").value.trim());
-  const fileType = encodeURIComponent($("typeFilter").value);
-  const sort = encodeURIComponent($("sortFilter").value || "date_added_desc");
-  const items = await api(`/api/items?q=${q}&file_type=${fileType}&sort=${sort}`);
+  const items = await api(`/api/items?${buildItemQueryParams()}`);
   state.items = items;
   renderCatalog();
   $("resultCount").textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
@@ -174,6 +187,275 @@ async function saveRootPath() {
   $("rootPathInput").value = result.root_path || "";
 }
 
+function setTagsStatus(message) {
+  $("tagsStatus").textContent = message || "";
+}
+
+function setView(view) {
+  state.currentView = view === "tags" ? "tags" : "browse";
+  $("browseView").classList.toggle("hidden", state.currentView !== "browse");
+  $("tagsView").classList.toggle("hidden", state.currentView !== "tags");
+  $("viewBrowseButton").classList.toggle("active", state.currentView === "browse");
+  $("viewTagsButton").classList.toggle("active", state.currentView === "tags");
+}
+
+function parseTagInput(value) {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function updateTagActionState() {
+  const hasActiveTag = Boolean(state.activeTag);
+  $("renameTagButton").disabled = !hasActiveTag;
+  $("deleteTagButton").disabled = !hasActiveTag;
+  $("bulkApplyButton").disabled =
+    !hasActiveTag || state.checkedTagItemIds.size <= 0;
+  $("checkedItemCount").textContent = `${state.checkedTagItemIds.size} checked`;
+}
+
+function renderTagList() {
+  const list = $("tagList");
+  list.innerHTML = "";
+
+  if (!state.tags.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.textContent = "No tags found.";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const tag of state.tags) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tag-row";
+    if (state.activeTag && state.activeTag.id === tag.id) {
+      button.classList.add("active");
+    }
+    button.innerHTML = `
+      <span class="tag-row-name">${escapeHtml(tag.name)}</span>
+      <span class="tag-row-count">${Number(tag.item_count || 0)} items</span>
+    `;
+    button.addEventListener("click", () => {
+      const isAlreadySelected =
+        state.activeTag && state.activeTag.id === Number(tag.id);
+      if (isAlreadySelected) {
+        state.activeTag = null;
+        state.taggedItems = [];
+        state.checkedTagItemIds.clear();
+        renderTagList();
+        renderTaggedItems();
+        updateTagActionState();
+        return;
+      }
+      state.activeTag = { id: Number(tag.id), name: String(tag.name || "") };
+      state.checkedTagItemIds.clear();
+      renderTagList();
+      renderTaggedItems();
+      updateTagActionState();
+      loadTaggedItems().catch((error) => {
+        setTagsStatus(error.message);
+      });
+    });
+    list.appendChild(button);
+  }
+}
+
+function renderTaggedItems() {
+  const activeTagTitle = $("activeTagTitle");
+  const activeTagCount = $("activeTagCount");
+  const resultCount = $("taggedResultCount");
+  const list = $("taggedItemsList");
+  list.innerHTML = "";
+
+  if (!state.activeTag) {
+    activeTagTitle.textContent = "No tag selected";
+    activeTagCount.textContent = "0 items";
+    resultCount.textContent = "Choose a tag to show matching items.";
+    updateTagActionState();
+    return;
+  }
+
+  activeTagTitle.textContent = `Tag: ${state.activeTag.name}`;
+  activeTagCount.textContent = `${state.taggedItems.length} item${
+    state.taggedItems.length === 1 ? "" : "s"
+  }`;
+  resultCount.textContent = `${state.taggedItems.length} matching item${
+    state.taggedItems.length === 1 ? "" : "s"
+  }`;
+
+  if (!state.taggedItems.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = "<p>No items match this tag with current filters.</p>";
+    list.appendChild(empty);
+    updateTagActionState();
+    return;
+  }
+
+  for (const item of state.taggedItems) {
+    const row = document.createElement("article");
+    row.className = "tagged-item";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.checkedTagItemIds.has(item.id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        state.checkedTagItemIds.add(item.id);
+      } else {
+        state.checkedTagItemIds.delete(item.id);
+      }
+      updateTagActionState();
+    });
+
+    const meta = document.createElement("div");
+    meta.className = "tagged-item-meta";
+    const tagsHtml = (item.tags || [])
+      .slice(0, 8)
+      .map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`)
+      .join("");
+    meta.innerHTML = `
+      <div class="tagged-item-title">${escapeHtml(item.filename)}</div>
+      <div class="tagged-item-path">${escapeHtml(item.relative_path)}</div>
+      <div class="row">
+        <span class="pill">${escapeHtml(item.file_type.toUpperCase())}</span>
+        <span class="muted">${escapeHtml(formatBytes(item.size_bytes))}</span>
+      </div>
+      <div class="tagged-item-tags">${tagsHtml}</div>
+    `;
+
+    row.appendChild(checkbox);
+    row.appendChild(meta);
+    list.appendChild(row);
+  }
+  updateTagActionState();
+}
+
+async function loadTags() {
+  const requestId = ++state.tagListRequestId;
+  const query = encodeURIComponent($("tagSearchInput").value.trim());
+  const tags = await api(`/api/tags?q=${query}`);
+  if (requestId !== state.tagListRequestId) return;
+
+  state.tags = tags.map((tag) => ({
+    id: Number(tag.id),
+    name: String(tag.name || ""),
+    item_count: Number(tag.item_count || 0),
+  }));
+
+  if (state.activeTag) {
+    const updated = state.tags.find((tag) => tag.id === state.activeTag.id);
+    if (updated) {
+      state.activeTag = { id: updated.id, name: updated.name };
+    } else {
+      state.activeTag = null;
+      state.taggedItems = [];
+      state.checkedTagItemIds.clear();
+    }
+  }
+
+  renderTagList();
+  renderTaggedItems();
+}
+
+async function loadTaggedItems() {
+  if (!state.activeTag) {
+    state.taggedItems = [];
+    state.checkedTagItemIds.clear();
+    renderTaggedItems();
+    return;
+  }
+
+  const requestId = ++state.taggedItemsRequestId;
+  const selectedTagName = state.activeTag.name;
+  const items = await api(
+    `/api/items?${buildItemQueryParams({ tag: selectedTagName })}`
+  );
+  if (requestId !== state.taggedItemsRequestId) return;
+  if (!state.activeTag || state.activeTag.name !== selectedTagName) return;
+
+  state.taggedItems = items;
+  const validIds = new Set(items.map((item) => item.id));
+  state.checkedTagItemIds = new Set(
+    [...state.checkedTagItemIds].filter((itemId) => validIds.has(itemId))
+  );
+  renderTaggedItems();
+}
+
+async function renameActiveTag() {
+  if (!state.activeTag) return;
+  const nextName = window.prompt("Rename tag", state.activeTag.name);
+  if (nextName === null) return;
+
+  const updated = await api(`/api/tags/${state.activeTag.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name: nextName }),
+  });
+  state.activeTag = { id: Number(updated.id), name: String(updated.name || "") };
+  setTagsStatus(`Tag renamed to "${state.activeTag.name}".`);
+  await loadTags();
+  await loadTaggedItems();
+  await loadItems();
+}
+
+async function deleteActiveTag() {
+  if (!state.activeTag) return;
+  const confirmed = window.confirm(
+    `Delete tag "${state.activeTag.name}" from all items?`
+  );
+  if (!confirmed) return;
+
+  const deletedTagName = state.activeTag.name;
+  await api(`/api/tags/${state.activeTag.id}`, { method: "DELETE" });
+  state.activeTag = null;
+  state.taggedItems = [];
+  state.checkedTagItemIds.clear();
+  setTagsStatus(`Tag "${deletedTagName}" deleted.`);
+  await loadTags();
+  await loadItems();
+  renderTaggedItems();
+}
+
+async function applyBulkTagUpdate() {
+  if (!state.activeTag) {
+    setTagsStatus("Select a tag first.");
+    return;
+  }
+
+  const itemIds = [...state.checkedTagItemIds];
+  if (!itemIds.length) {
+    setTagsStatus("Check at least one item before applying bulk update.");
+    return;
+  }
+
+  const addTags = parseTagInput($("bulkAddTagsInput").value);
+  const removeTags = parseTagInput($("bulkRemoveTagsInput").value);
+  if (!addTags.length && !removeTags.length) {
+    setTagsStatus("Enter tags to add or remove.");
+    return;
+  }
+
+  const result = await api("/api/tags/bulk-update", {
+    method: "POST",
+    body: JSON.stringify({
+      item_ids: itemIds,
+      add_tags: addTags,
+      remove_tags: removeTags,
+    }),
+  });
+
+  $("bulkAddTagsInput").value = "";
+  $("bulkRemoveTagsInput").value = "";
+  setTagsStatus(`Bulk update applied to ${result.updated_items || 0} item(s).`);
+
+  await loadTags();
+  await loadTaggedItems();
+  await loadItems();
+}
+
 async function browseRoot() {
   if (!state.hasBridge || !window.pywebview?.api?.pick_folder) return;
   const result = await window.pywebview.api.pick_folder();
@@ -205,7 +487,11 @@ function applyScanStatus(scan) {
 
   if (!isActive && status === "completed" && runId && runId !== state.lastLoadedRunId) {
     state.lastLoadedRunId = runId;
-    loadItems().catch((error) => {
+    Promise.all([
+      loadItems(),
+      loadTags(),
+      state.activeTag ? loadTaggedItems() : Promise.resolve(),
+    ]).catch((error) => {
       $("scanStatus").textContent = error.message;
     });
   }
@@ -255,13 +541,40 @@ let searchTimer = null;
 function queueSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    loadItems().catch((error) => {
+    Promise.all([
+      loadItems(),
+      state.currentView === "tags" && state.activeTag
+        ? loadTaggedItems()
+        : Promise.resolve(),
+    ]).catch((error) => {
       $("scanStatus").textContent = error.message;
     });
   }, 180);
 }
 
+let tagSearchTimer = null;
+function queueTagSearch() {
+  clearTimeout(tagSearchTimer);
+  tagSearchTimer = setTimeout(() => {
+    loadTags()
+      .then(() => (state.activeTag ? loadTaggedItems() : Promise.resolve()))
+      .catch((error) => {
+        setTagsStatus(error.message);
+      });
+  }, 180);
+}
+
 async function init() {
+  $("viewBrowseButton").addEventListener("click", () => setView("browse"));
+  $("viewTagsButton").addEventListener("click", () => {
+    setView("tags");
+    Promise.all([
+      loadTags(),
+      state.activeTag ? loadTaggedItems() : Promise.resolve(),
+    ]).catch((error) => {
+      setTagsStatus(error.message);
+    });
+  });
   $("saveRootButton").addEventListener("click", () => saveRootPath().catch((error) => {
     $("scanStatus").textContent = error.message;
   }));
@@ -277,12 +590,24 @@ async function init() {
   $("searchInput").addEventListener("input", queueSearch);
   $("typeFilter").addEventListener("change", queueSearch);
   $("sortFilter").addEventListener("change", queueSearch);
+  $("tagSearchInput").addEventListener("input", queueTagSearch);
+  $("renameTagButton").addEventListener("click", () => renameActiveTag().catch((error) => {
+    setTagsStatus(error.message);
+  }));
+  $("deleteTagButton").addEventListener("click", () => deleteActiveTag().catch((error) => {
+    setTagsStatus(error.message);
+  }));
+  $("bulkApplyButton").addEventListener("click", () => applyBulkTagUpdate().catch((error) => {
+    setTagsStatus(error.message);
+  }));
 
   detectBridge();
   setInterval(detectBridge, 1000);
 
+  setView("browse");
   await loadConfig();
-  await loadItems();
+  await Promise.all([loadItems(), loadTags()]);
+  renderTaggedItems();
   try {
     const scan = await pollScanStatus();
     if (ACTIVE_SCAN_STATUSES.has(String(scan?.status || ""))) {

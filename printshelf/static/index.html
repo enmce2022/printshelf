@@ -15,6 +15,14 @@
         </div>
 
         <section class="panel">
+          <h2>View</h2>
+          <div class="row view-switch">
+            <button id="viewBrowseButton" class="button secondary active" type="button">Browse</button>
+            <button id="viewTagsButton" class="button secondary" type="button">Tags</button>
+          </div>
+        </section>
+
+        <section class="panel">
           <h2>Library</h2>
           <label class="field">
             <span>Root folder</span>
@@ -58,60 +66,103 @@
       </aside>
 
       <main class="content">
-        <section class="catalog">
-          <div id="catalogGrid" class="catalog-grid"></div>
-          <div id="emptyState" class="empty-state hidden">
-            <h2>No items yet</h2>
-            <p>Select a library folder and run a scan. The catalog will appear here.</p>
-          </div>
+        <section id="browseView" class="content-view browse-view">
+          <section class="catalog">
+            <div id="catalogGrid" class="catalog-grid"></div>
+            <div id="emptyState" class="empty-state hidden">
+              <h2>No items yet</h2>
+              <p>Select a library folder and run a scan. The catalog will appear here.</p>
+            </div>
+          </section>
+
+          <section class="detail panel">
+            <div id="detailEmpty" class="detail-empty">
+              <h2>Select an item</h2>
+              <p>Click a card to edit tags, notes, and custom metadata.</p>
+            </div>
+
+            <div id="detailView" class="hidden">
+              <div class="detail-header">
+                <h2 id="detailTitle"></h2>
+                <span id="detailType" class="pill"></span>
+              </div>
+
+              <div class="preview-wrap">
+                <img id="detailPreview" alt="Preview">
+              </div>
+
+              <dl class="meta-list">
+                <div><dt>Path</dt><dd id="detailPath"></dd></div>
+                <div><dt>Preview source</dt><dd id="detailPreviewSource"></dd></div>
+                <div><dt>File size</dt><dd id="detailSize"></dd></div>
+              </dl>
+
+              <label class="field">
+                <span>Tags</span>
+                <input id="tagsInput" type="text" placeholder="comma, separated, tags">
+              </label>
+
+              <label class="field">
+                <span>Description</span>
+                <textarea id="descriptionInput" rows="6" placeholder="Notes about this file"></textarea>
+              </label>
+
+              <label class="field">
+                <span>Custom metadata (JSON)</span>
+                <textarea id="metaInput" rows="8" placeholder='{"material": "PETG", "printer": "Voron"}'></textarea>
+              </label>
+
+              <div class="row">
+                <button id="saveItemButton" class="button primary">Save changes</button>
+              </div>
+
+              <div class="generated-meta">
+                <h3>Indexed metadata</h3>
+                <pre id="indexedMeta"></pre>
+              </div>
+            </div>
+          </section>
         </section>
 
-        <section class="detail panel">
-          <div id="detailEmpty" class="detail-empty">
-            <h2>Select an item</h2>
-            <p>Click a card to edit tags, notes, and custom metadata.</p>
-          </div>
+        <section id="tagsView" class="content-view tags-view hidden">
+          <section class="panel tags-panel">
+            <h2>Tags</h2>
+            <label class="field">
+              <span>Find tag</span>
+              <input id="tagSearchInput" type="search" placeholder="Search tag names">
+            </label>
+            <div id="tagList" class="tag-explorer-list"></div>
+            <p id="tagsStatus" class="muted">Select a tag to explore matching items.</p>
+          </section>
 
-          <div id="detailView" class="hidden">
+          <section class="panel tags-results-panel">
             <div class="detail-header">
-              <h2 id="detailTitle"></h2>
-              <span id="detailType" class="pill"></span>
+              <h2 id="activeTagTitle">No tag selected</h2>
+              <span id="activeTagCount" class="pill">0 items</span>
             </div>
-
-            <div class="preview-wrap">
-              <img id="detailPreview" alt="Preview">
-            </div>
-
-            <dl class="meta-list">
-              <div><dt>Path</dt><dd id="detailPath"></dd></div>
-              <div><dt>Preview source</dt><dd id="detailPreviewSource"></dd></div>
-              <div><dt>File size</dt><dd id="detailSize"></dd></div>
-            </dl>
-
-            <label class="field">
-              <span>Tags</span>
-              <input id="tagsInput" type="text" placeholder="comma, separated, tags">
-            </label>
-
-            <label class="field">
-              <span>Description</span>
-              <textarea id="descriptionInput" rows="6" placeholder="Notes about this file"></textarea>
-            </label>
-
-            <label class="field">
-              <span>Custom metadata (JSON)</span>
-              <textarea id="metaInput" rows="8" placeholder='{"material": "PETG", "printer": "Voron"}'></textarea>
-            </label>
-
             <div class="row">
-              <button id="saveItemButton" class="button primary">Save changes</button>
+              <button id="renameTagButton" class="button secondary" type="button" disabled>Rename tag</button>
+              <button id="deleteTagButton" class="button secondary" type="button" disabled>Delete tag</button>
+            </div>
+            <p id="taggedResultCount" class="muted">Choose a tag to show matching items.</p>
+
+            <div class="bulk-controls">
+              <label class="field">
+                <span>Add tags to checked items</span>
+                <input id="bulkAddTagsInput" type="text" placeholder="tag-one, tag-two">
+              </label>
+              <label class="field">
+                <span>Remove tags from checked items</span>
+                <input id="bulkRemoveTagsInput" type="text" placeholder="old-tag">
+              </label>
+              <div class="row">
+                <button id="bulkApplyButton" class="button primary" type="button" disabled>Apply bulk update</button>
+                <span id="checkedItemCount" class="muted">0 checked</span>
+              </div>
             </div>
 
-            <div class="generated-meta">
-              <h3>Indexed metadata</h3>
-              <pre id="indexedMeta"></pre>
-            </div>
-          </div>
+            <div id="taggedItemsList" class="tagged-items-list"></div>
+          </section>
         </section>
       </main>
     </div>

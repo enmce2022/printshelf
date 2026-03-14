@@ -10,6 +10,7 @@ A simple Python desktop app for browsing a library of `.stl` and `.gcode` files.
 - Extracts embedded PNG thumbnails from G-code when available
 - Falls back to generating a preview from toolpaths when a G-code thumbnail is missing or unsupported
 - Lets you add tags, descriptions, and custom JSON metadata
+- Includes a dedicated Tags view for exploration and bulk tag operations
 - Runs a local FastAPI server and opens the UI in a native desktop window via pywebview
 
 ## Preview strategy
@@ -142,6 +143,16 @@ test -d ~/.printshelf && echo EXISTS || echo MISSING
 ```
 
 If pywebview is unavailable on your platform, the app will still start the local server and open the UI in a browser.
+
+## Tags view
+
+Use the `Tags` view switch in the sidebar to open the dedicated tag explorer.
+
+- Search tags by name and select one active tag at a time.
+- Tag item results combine the active tag with current Search, Type, and Sort filters.
+- Rename supports merge behavior: renaming to an existing tag name merges them.
+- Delete detaches the tag from all items (items/files remain).
+- Bulk add/remove actions apply only to checked items in the tag result list.
 
 ## Notes for Linux
 
