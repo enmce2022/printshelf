@@ -38,6 +38,32 @@ Create a virtual environment, install dependencies, and start the app:
 `pip install -e .[dev]` for formatter/linter tooling
 `python run.py`
 
+Worker model:
+PrintShelf starts Uvicorn with a single worker (`1`) by default.
+The app does not set `workers` explicitly in code.
+If `WEB_CONCURRENCY` is set in the environment, Uvicorn can override the default worker count.
+
+Set `WEB_CONCURRENCY` (optional):
+Use this to override the default worker count for the current shell session. This is temporary unless you persist it in your shell/profile settings.
+
+```powershell
+# Windows PowerShell (current session)
+$env:WEB_CONCURRENCY = "2"
+python run.py
+```
+
+```cmd
+:: Windows Command Prompt (current session)
+set WEB_CONCURRENCY=2
+python run.py
+```
+
+```bash
+# macOS/Linux (current shell session)
+export WEB_CONCURRENCY=2
+python run.py
+```
+
 If pywebview is unavailable on your platform, the app will still start the local server and open the UI in a browser.
 
 ## Notes for Linux

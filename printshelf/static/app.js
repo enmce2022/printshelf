@@ -173,7 +173,8 @@ async function saveRootPath() {
 async function browseRoot() {
   if (!state.hasBridge || !window.pywebview?.api?.pick_folder) return;
   const result = await window.pywebview.api.pick_folder();
-  $("rootPathInput").value = result.root_path || "";
+  if (!result || typeof result !== "object") return;
+  $("rootPathInput").value = result.root_path || $("rootPathInput").value || "";
 }
 
 async function scanLibrary() {

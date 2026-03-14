@@ -12,7 +12,7 @@ license = { file = "LICENSE" }
 dependencies = [
   "fastapi>=0.115",
   "uvicorn>=0.32",
-  "pywebview>=5.4",
+  "pywebview>=6.1",
   "trimesh>=4.6",
   "numpy>=2.1",
   "matplotlib>=3.9",

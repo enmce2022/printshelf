@@ -21,26 +21,28 @@ def _find_free_port() -> int:
 
 class NativeBridge:
     def __init__(self, service: PrintShelfService) -> None:
-        self.service = service
-        self.window = None
+        self._service = service
+        self._window = None
 
-    def attach_window(self, window: Any) -> None:
-        self.window = window
+    def _attach_window(self, window: Any) -> None:
+        self._window = window
 
     def pick_folder(self) -> dict[str, str]:
-        if self.window is None:
-            return {"root_path": self.service.get_root_path()}
-        result = self.window.create_file_dialog(
-            3,  # FOLDER_DIALOG
-            directory=self.service.get_root_path() or str(Path.home()),
+        if self._window is None:
+            return {"root_path": self._service.get_root_path()}
+        import webview
+
+        result = self._window.create_file_dialog(
+            webview.FileDialog.FOLDER,
+            directory=self._service.get_root_path() or str(Path.home()),
         )
         if result:
-            root = self.service.set_root_path(result[0])
+            root = self._service.set_root_path(result[0])
             return {"root_path": root}
-        return {"root_path": self.service.get_root_path()}
+        return {"root_path": self._service.get_root_path()}
 
     def scan_now(self) -> dict[str, Any]:
-        return self.service.scan()
+        return self._service.scan()
 
 
 def run_desktop_app() -> None:
@@ -78,7 +80,7 @@ def run_desktop_app() -> None:
             height=920,
             min_size=(980, 700),
         )
-        bridge.attach_window(window)
+        bridge._attach_window(window)
         webview.start()
     except Exception:
         webbrowser.open(url)
