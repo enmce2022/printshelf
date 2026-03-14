@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=82", "wheel>=0.46"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "printshelf"
+version = "0.1.0"
+description = "Desktop app for browsing STL and G-code libraries with previews."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "pywebview>=5.4",
+  "trimesh>=4.6",
+  "numpy>=2.1",
+  "matplotlib>=3.9",
+  "pillow>=11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=26.3.1",
+  "isort>=8.0.1",
+  "ruff>=0.15.6",
+]
+
+[tool.setuptools.packages.find]
+include = ["printshelf*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]

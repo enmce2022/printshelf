@@ -34,7 +34,8 @@ Create a virtual environment, install dependencies, and start the app:
 
 `python -m venv .venv`
 `.venv\Scripts\activate` on Windows or `source .venv/bin/activate` on macOS/Linux
-`pip install -r requirements.txt`
+`pip install -e .`
+`pip install -e .[dev]` for formatter/linter tooling
 `python run.py`
 
 If pywebview is unavailable on your platform, the app will still start the local server and open the UI in a browser.
