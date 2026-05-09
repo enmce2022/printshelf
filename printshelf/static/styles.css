@@ -154,6 +154,10 @@ textarea {
   margin-top: var(--space-2);
 }
 
+.scan-actions > .button.primary {
+  flex: 1 1 auto;
+}
+
 /* === BUTTONS === */
 .button {
   appearance: none;
@@ -191,6 +195,16 @@ textarea {
 
 .button.secondary:hover:not(:disabled) {
   background: #eef2f7;
+}
+
+.button.icon-button {
+  padding: 10px;
+  min-width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
 }
 
 .button.danger {

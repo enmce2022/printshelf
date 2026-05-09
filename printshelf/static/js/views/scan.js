@@ -50,7 +50,17 @@ function applyScanStatus(scan) {
   if (pauseResumeButton) {
     const showPauseResume = isActive && status !== "canceling";
     pauseResumeButton.classList.toggle("hidden", !showPauseResume);
-    pauseResumeButton.textContent = status === "paused" ? "Resume" : "Pause";
+    if (status === "paused") {
+      pauseResumeButton.textContent = "▶";
+      pauseResumeButton.title = "Resume";
+      pauseResumeButton.setAttribute("aria-label", "Resume");
+      pauseResumeButton.dataset.action = "resume";
+    } else {
+      pauseResumeButton.textContent = "⏸";
+      pauseResumeButton.title = "Pause";
+      pauseResumeButton.setAttribute("aria-label", "Pause");
+      pauseResumeButton.dataset.action = "pause";
+    }
     pauseResumeButton.disabled = false;
   }
 
@@ -177,13 +187,13 @@ async function cancelScan() {
 async function togglePauseResume() {
   const button = $("pauseResumeButton");
   if (!button || button.classList.contains("hidden")) return;
-  const isPaused = button.textContent === "Resume";
+  const isResume = button.dataset.action === "resume";
   button.disabled = true;
   try {
-    const endpoint = isPaused ? "/api/scan/resume" : "/api/scan/pause";
+    const endpoint = isResume ? "/api/scan/resume" : "/api/scan/pause";
     const scan = await api(endpoint, { method: "POST" });
     applyScanStatus(scan);
-    toast.info(isPaused ? "Resuming scan." : "Pause requested.");
+    toast.info(isResume ? "Resuming scan." : "Pause requested.");
   } catch (error) {
     toast.error(error.message);
     button.disabled = false;

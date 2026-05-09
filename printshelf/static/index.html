@@ -34,10 +34,12 @@
             <button id="saveRootButton" class="button secondary" type="button">Save path</button>
             <button id="browseButton" class="button" type="button">Browse</button>
           </div>
-          <div class="row">
+          <div class="row scan-actions">
             <button id="scanButton" class="button primary" type="button">Scan library</button>
-            <button id="pauseResumeButton" class="button secondary hidden" type="button">Pause</button>
-            <button id="cancelScanButton" class="button secondary hidden" type="button">Cancel</button>
+            <button id="pauseResumeButton" class="button secondary icon-button hidden" type="button"
+                    title="Pause" aria-label="Pause">⏸</button>
+            <button id="cancelScanButton" class="button secondary icon-button hidden" type="button"
+                    title="Cancel scan" aria-label="Cancel scan">✕</button>
           </div>
           <div id="scanProgressBar" class="scan-progress hidden" role="progressbar"
                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
