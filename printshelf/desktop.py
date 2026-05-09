@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import socket
+import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -43,6 +46,37 @@ class NativeBridge:
 
     def scan_now(self) -> dict[str, Any]:
         return self._service.request_scan()
+
+    def reveal_in_explorer(self, path: str) -> dict[str, Any]:
+        target = Path(str(path or "")).expanduser()
+        if not target.exists():
+            return {"error": f"Path does not exist: {target}"}
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["explorer", "/select,", str(target)], check=False)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", "-R", str(target)], check=False)
+            else:
+                parent = target.parent if target.is_file() else target
+                subprocess.run(["xdg-open", str(parent)], check=False)
+            return {"ok": True}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def open_file(self, path: str) -> dict[str, Any]:
+        target = Path(str(path or "")).expanduser()
+        if not target.exists():
+            return {"error": f"Path does not exist: {target}"}
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(target))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(target)], check=False)
+            else:
+                subprocess.run(["xdg-open", str(target)], check=False)
+            return {"ok": True}
+        except Exception as exc:
+            return {"error": str(exc)}
 
 
 def run_desktop_app() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import logging
 import math
 import re
 from pathlib import Path
@@ -16,6 +17,17 @@ import numpy as np
 import trimesh
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 from PIL import Image, ImageDraw
+
+log = logging.getLogger("printshelf.preview")
+
+# Render constants — kept here so future tuning lives in one place.
+RENDER_FIGSIZE = (5.2, 5.2)
+RENDER_DPI = 120
+STL_VIEW_ELEV = 24
+STL_VIEW_AZIM = -58
+GCODE_VIEW_ELEV = 26
+GCODE_VIEW_AZIM = -58
+GCODE_MAX_SEGMENTS = 60_000
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 THUMB_START_RE = re.compile(
@@ -110,7 +122,7 @@ def render_stl_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     intensity = np.clip(normals @ light, 0.18, 1.0)
     colors = plt.cm.Greys(0.25 + 0.55 * intensity)
 
-    fig = plt.figure(figsize=(5.2, 5.2), dpi=120)
+    fig = plt.figure(figsize=RENDER_FIGSIZE, dpi=RENDER_DPI)
     ax = fig.add_subplot(111, projection="3d")
     collection = Poly3DCollection(triangles, linewidths=0.03)
     collection.set_facecolor(colors)
@@ -118,7 +130,7 @@ def render_stl_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     ax.add_collection3d(collection)
 
     _set_equal_axes(ax, mesh.vertices)
-    ax.view_init(elev=24, azim=-58)
+    ax.view_init(elev=STL_VIEW_ELEV, azim=STL_VIEW_AZIM)
     ax.set_axis_off()
     fig.patch.set_alpha(0)
     ax.patch.set_alpha(0)
@@ -305,9 +317,8 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
         raise ValueError("No printable extrusion moves found in G-code")
 
     raw_segment_count = len(segments)
-    max_segments = 60000
-    if len(segments) > max_segments:
-        step = math.ceil(len(segments) / max_segments)
+    if len(segments) > GCODE_MAX_SEGMENTS:
+        step = math.ceil(len(segments) / GCODE_MAX_SEGMENTS)
         segments = segments[::step]
 
     lines = [[seg[0], seg[1]] for seg in segments]
@@ -318,13 +329,13 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     span = max(z_max - z_min, 1e-9)
     colors = plt.cm.viridis((z_values - z_min) / span)
 
-    fig = plt.figure(figsize=(5.2, 5.2), dpi=120)
+    fig = plt.figure(figsize=RENDER_FIGSIZE, dpi=RENDER_DPI)
     ax = fig.add_subplot(111, projection="3d")
     collection = Line3DCollection(lines, colors=colors, linewidths=0.9, alpha=0.95)
     ax.add_collection3d(collection)
 
     _set_equal_axes(ax, points)
-    ax.view_init(elev=26, azim=-58)
+    ax.view_init(elev=GCODE_VIEW_ELEV, azim=GCODE_VIEW_AZIM)
     ax.set_axis_off()
     fig.patch.set_alpha(0)
     ax.patch.set_alpha(0)
@@ -349,33 +360,90 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     return metadata
 
 
+class PreviewStrategy:
+    """Base class for preview generation strategies.
+
+    A strategy declares which file extensions it handles and attempts to
+    produce a preview. Returning None means "not applicable" and lets the
+    registry fall through to the next strategy for that extension.
+    """
+
+    extensions: tuple[str, ...] = ()
+    source: str = ""
+
+    def try_generate(self, file_path: Path, output_path: Path) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+
+class StlStrategy(PreviewStrategy):
+    extensions = ("stl",)
+    source = "generated-mesh"
+
+    def try_generate(self, file_path: Path, output_path: Path) -> dict[str, Any] | None:
+        meta = render_stl_preview(file_path, output_path)
+        return meta
+
+
+class GcodeEmbeddedThumbStrategy(PreviewStrategy):
+    extensions = ("gcode",)
+    source = "embedded-png"
+
+    def try_generate(self, file_path: Path, output_path: Path) -> dict[str, Any] | None:
+        if not extract_gcode_thumbnail_preview(file_path, output_path):
+            return None
+        return {"preview_mode": "embedded-png"}
+
+
+class GcodeToolpathStrategy(PreviewStrategy):
+    extensions = ("gcode",)
+    source = "generated-toolpath"
+
+    def try_generate(self, file_path: Path, output_path: Path) -> dict[str, Any] | None:
+        return render_gcode_preview(file_path, output_path)
+
+
+_STRATEGIES: list[PreviewStrategy] = [
+    StlStrategy(),
+    GcodeEmbeddedThumbStrategy(),
+    GcodeToolpathStrategy(),
+]
+
+
+def _strategies_for(extension: str) -> list[PreviewStrategy]:
+    return [s for s in _STRATEGIES if extension in s.extensions]
+
+
 def generate_preview(
     file_path: Path, preview_dir: Path, modified_at: int
 ) -> tuple[str | None, str, dict[str, Any]]:
     preview_name = _preview_name(file_path, modified_at)
     output_path = preview_dir / preview_name
     file_type = file_path.suffix.lower().lstrip(".")
-    indexed_meta: dict[str, Any] = {
-        "file_extension": file_type,
-    }
+    indexed_meta: dict[str, Any] = {"file_extension": file_type}
 
-    try:
-        if file_type == "stl":
-            indexed_meta.update(render_stl_preview(file_path, output_path))
-            return preview_name, "generated-mesh", indexed_meta
-
-        if file_type == "gcode":
-            if extract_gcode_thumbnail_preview(file_path, output_path):
-                indexed_meta["preview_mode"] = "embedded-png"
-                return preview_name, "embedded-png", indexed_meta
-            indexed_meta.update(render_gcode_preview(file_path, output_path))
-            return preview_name, "generated-toolpath", indexed_meta
-
+    strategies = _strategies_for(file_type)
+    if not strategies:
         _placeholder_preview(output_path, file_type.upper(), "Unsupported preview type")
         indexed_meta["preview_mode"] = "placeholder"
         return preview_name, "placeholder", indexed_meta
-    except Exception as exc:
-        _placeholder_preview(output_path, file_type.upper(), str(exc))
-        indexed_meta["preview_mode"] = "placeholder-error"
-        indexed_meta["preview_error"] = str(exc)
-        return preview_name, "placeholder-error", indexed_meta
+
+    for strategy in strategies:
+        try:
+            result = strategy.try_generate(file_path, output_path)
+        except Exception as exc:
+            log.exception(
+                "preview strategy %s failed for %s",
+                type(strategy).__name__,
+                file_path,
+            )
+            _placeholder_preview(output_path, file_type.upper(), str(exc))
+            indexed_meta["preview_mode"] = "placeholder-error"
+            indexed_meta["preview_error"] = str(exc)
+            return preview_name, "placeholder-error", indexed_meta
+        if result is not None:
+            indexed_meta.update(result)
+            return preview_name, strategy.source, indexed_meta
+
+    _placeholder_preview(output_path, file_type.upper(), "No preview strategy matched")
+    indexed_meta["preview_mode"] = "placeholder"
+    return preview_name, "placeholder", indexed_meta

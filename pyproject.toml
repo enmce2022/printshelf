@@ -24,6 +24,7 @@ dev = [
   "black>=26.3.1",
   "isort>=8.0.1",
   "ruff>=0.15.6",
+  "pytest>=9.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -44,3 +45,7 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

@@ -66,6 +66,10 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
     def scan_status_route() -> dict[str, Any]:
         return service.get_scan_status()
 
+    @app.post("/api/scan/cancel")
+    def cancel_scan_route() -> dict[str, Any]:
+        return service.cancel_scan()
+
     @app.get("/api/items")
     def list_items(
         q: str = "", file_type: str = "", tag: str = "", sort: str = "date_added_desc"

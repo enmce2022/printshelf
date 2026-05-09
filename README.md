@@ -31,13 +31,16 @@ PrusaSlicer can emit both PNG and QOI thumbnails in modern G-code. This starter 
 
 ## Run it
 
-Create a virtual environment, install dependencies, and start the app:
+PrintShelf uses [uv](https://docs.astral.sh/uv/) for environment and dependency management. Install uv first, then:
 
-`python -m venv .venv`
-`.venv\Scripts\activate` on Windows or `source .venv/bin/activate` on macOS/Linux
-`pip install -e .`
-`pip install -e .[dev]` for formatter/linter tooling
-`python run.py`
+```
+uv sync --extra dev    # creates .venv and installs runtime + dev tooling
+uv run python run.py   # launch the desktop app
+```
+
+`uv.lock` is committed, so `uv sync` produces an identical environment on every machine. The optional `--extra dev` pulls in formatter/linter/test tooling (`black`, `isort`, `ruff`, `pytest`).
+
+If you prefer the classic flow it still works (`python -m venv .venv`, then `pip install -e .[dev]`), but uv is the documented path.
 
 Worker model:
 PrintShelf starts Uvicorn with a single worker (`1`) by default.

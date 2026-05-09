@@ -1,24 +1,31 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
 from .database import Database
+from .logging_setup import configure_logging
+from .scan_state import ScanRunStore
 from .scanner import ScanCanceledError, count_supported_files, scan_library
 
 ACTIVE_SCAN_STATUSES = {"counting", "running", "canceling"}
+
+log = logging.getLogger("printshelf.service")
 
 
 class PrintShelfService:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        configure_logging(self.data_dir)
         self.preview_dir = self.data_dir / "previews"
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         self.db = Database(self.data_dir / "printshelf.sqlite3")
+        self.scan_store = ScanRunStore(self.db)
         self._scan_thread_lock = threading.Lock()
         self._scan_thread: threading.Thread | None = None
         self._scan_owner_token = uuid.uuid4().hex
@@ -34,29 +41,30 @@ class PrintShelfService:
     def get_config(self) -> dict[str, Any]:
         return {"root_path": self.get_root_path()}
 
-    def scan(self) -> dict[str, Any]:
-        return self.request_scan()
-
     def request_scan(self) -> dict[str, Any]:
         root_path = self.get_root_path()
         if not root_path:
             raise ValueError("Select a library folder before scanning")
 
-        current = self.db.get_scan_state()
+        current = self.scan_store.get_state()
         if current["status"] in ACTIVE_SCAN_STATUSES and current["run_id"]:
-            self.db.request_scan_restart(root_path)
+            self.scan_store.request_restart(root_path)
             self._ensure_scan_worker()
-            return self.db.get_scan_state()
+            return self.scan_store.get_state()
 
         run_id = uuid.uuid4().hex
-        if not self.db.start_scan_run(run_id, root_path):
-            self.db.request_scan_restart(root_path)
+        if not self.scan_store.start_run(run_id, root_path):
+            self.scan_store.request_restart(root_path)
 
         self._ensure_scan_worker()
-        return self.db.get_scan_state()
+        return self.scan_store.get_state()
+
+    def cancel_scan(self) -> dict[str, Any]:
+        self.scan_store.request_cancel()
+        return self.scan_store.get_state()
 
     def get_scan_status(self) -> dict[str, Any]:
-        return self.db.get_scan_state()
+        return self.scan_store.get_state()
 
     def _ensure_scan_worker(self) -> None:
         with self._scan_thread_lock:
@@ -87,32 +95,42 @@ class PrintShelfService:
 
     def _scan_worker_loop(self) -> None:
         while True:
-            state = self.db.get_scan_state()
+            state = self.scan_store.get_state()
             run_id = str(state.get("run_id") or "")
             if state.get("status") not in ACTIVE_SCAN_STATUSES or not run_id:
                 return
 
-            if not self.db.claim_scan_owner(run_id, self._scan_owner_token):
+            if not self.scan_store.claim_owner(run_id, self._scan_owner_token):
                 return
 
-            state = self.db.get_scan_state()
+            state = self.scan_store.get_state()
             if state.get("run_id") != run_id:
                 continue
 
             root_path = str(state.get("root_path") or "")
+            log.info("scan run %s starting (root=%s)", run_id, root_path)
             try:
                 self._execute_scan_run(run_id=run_id, root_path=root_path)
+                log.info("scan run %s finished", run_id)
             except Exception as exc:
-                self.db.fail_scan_run(run_id, str(exc))
+                log.exception("scan run %s failed", run_id)
+                self.scan_store.fail_run(run_id, str(exc))
 
             next_run_id = uuid.uuid4().hex
-            next_root = self.db.claim_restart_run(
+            next_root = self.scan_store.claim_restart(
                 previous_run_id=run_id,
                 new_run_id=next_run_id,
                 owner_token=self._scan_owner_token,
             )
             if next_root:
                 continue
+
+            after = self.scan_store.get_state()
+            if (
+                str(after.get("run_id") or "") == run_id
+                and after.get("status") == "canceling"
+            ):
+                self.scan_store.fail_run(run_id, "Scan canceled")
             return
 
     def _execute_scan_run(self, run_id: str, root_path: str) -> None:
@@ -120,14 +138,14 @@ class PrintShelfService:
             raise ValueError("Select a library folder before scanning")
 
         def should_cancel() -> bool:
-            cancel = self.db.is_scan_cancel_requested(run_id)
+            cancel = self.scan_store.is_cancel_requested(run_id)
             if cancel:
-                self.db.mark_scan_canceling(
-                    run_id, "Restart requested. Waiting for current file to finish..."
+                self.scan_store.mark_canceling(
+                    run_id, "Cancel requested. Waiting for current file to finish..."
                 )
             return cancel
 
-        self.db.update_scan_progress(
+        self.scan_store.update_progress(
             run_id,
             status="counting",
             total_files=0,
@@ -145,7 +163,7 @@ class PrintShelfService:
         if should_cancel():
             raise ScanCanceledError("Scan canceled")
 
-        self.db.update_scan_progress(
+        self.scan_store.update_progress(
             run_id,
             status="running",
             total_files=total_files,
@@ -163,7 +181,7 @@ class PrintShelfService:
             changed = int(snapshot.get("changed", 0))
             reused = int(snapshot.get("reused", 0))
             deleted = int(snapshot.get("deleted", 0))
-            self.db.update_scan_progress(
+            self.scan_store.update_progress(
                 run_id,
                 status="running",
                 total_files=total,
@@ -185,8 +203,8 @@ class PrintShelfService:
                 should_cancel=should_cancel,
             )
         except ScanCanceledError:
-            self.db.mark_scan_canceling(
-                run_id, "Restart requested. Waiting for current file to finish..."
+            self.scan_store.mark_canceling(
+                run_id, "Cancel requested. Waiting for current file to finish..."
             )
             return
 
@@ -197,7 +215,7 @@ class PrintShelfService:
             f"Scan complete. {result['scanned']} files found, {result['changed']} "
             f"updated, {result['reused']} reused, {result['deleted']} removed."
         )
-        self.db.complete_scan_run(run_id, result, completed_message)
+        self.scan_store.complete_run(run_id, result, completed_message)
 
     def _serialize_item(self, item: dict[str, Any]) -> dict[str, Any]:
         preview_rel_path = item.get("preview_rel_path")
@@ -205,12 +223,20 @@ class PrintShelfService:
 
         try:
             user_meta = json.loads(item.get("meta_json") or "{}")
-        except Exception:
+        except json.JSONDecodeError:
+            log.warning(
+                "item %s has invalid meta_json; coercing to empty dict",
+                item.get("id"),
+            )
             user_meta = {}
 
         try:
             indexed_meta = json.loads(item.get("indexed_meta_json") or "{}")
-        except Exception:
+        except json.JSONDecodeError:
+            log.warning(
+                "item %s has invalid indexed_meta_json; coercing to empty dict",
+                item.get("id"),
+            )
             indexed_meta = {}
 
         return {

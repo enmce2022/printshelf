@@ -16,9 +16,11 @@
 
         <section class="panel">
           <h2>View</h2>
-          <div class="row view-switch">
-            <button id="viewBrowseButton" class="button secondary active" type="button">Browse</button>
-            <button id="viewTagsButton" class="button secondary" type="button">Tags</button>
+          <div class="row view-switch" role="tablist" aria-label="Main view">
+            <button id="viewBrowseButton" class="button secondary active" type="button"
+                    role="tab" aria-selected="true" aria-controls="browseView" tabindex="0">Browse</button>
+            <button id="viewTagsButton" class="button secondary" type="button"
+                    role="tab" aria-selected="false" aria-controls="tagsView" tabindex="-1">Tags</button>
           </div>
         </section>
 
@@ -29,11 +31,16 @@
             <input id="rootPathInput" type="text" placeholder="Select or paste a folder path">
           </label>
           <div class="row">
-            <button id="saveRootButton" class="button secondary">Save path</button>
-            <button id="browseButton" class="button">Browse</button>
+            <button id="saveRootButton" class="button secondary" type="button">Save path</button>
+            <button id="browseButton" class="button" type="button">Browse</button>
           </div>
           <div class="row">
-            <button id="scanButton" class="button primary">Scan library</button>
+            <button id="scanButton" class="button primary" type="button">Scan library</button>
+            <button id="cancelScanButton" class="button secondary hidden" type="button">Cancel</button>
+          </div>
+          <div id="scanProgressBar" class="scan-progress hidden" role="progressbar"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="scanProgressFill" class="scan-progress-fill"></div>
           </div>
           <p id="scanStatus" class="muted">No scan started yet.</p>
         </section>
@@ -66,9 +73,11 @@
       </aside>
 
       <main class="content">
-        <section id="browseView" class="content-view browse-view">
+        <section id="browseView" class="content-view browse-view" role="tabpanel"
+                 aria-labelledby="viewBrowseButton">
           <section class="catalog">
-            <div id="catalogGrid" class="catalog-grid"></div>
+            <div id="catalogGrid" class="catalog-grid" role="listbox"
+                 aria-label="Library items"></div>
             <div id="emptyState" class="empty-state hidden">
               <h2>No items yet</h2>
               <p>Select a library folder and run a scan. The catalog will appear here.</p>
@@ -87,6 +96,15 @@
                 <span id="detailType" class="pill"></span>
               </div>
 
+              <div class="detail-actions row">
+                <button id="copyPathButton" class="button secondary" type="button"
+                        title="Copy path to clipboard">Copy path</button>
+                <button id="revealItemButton" class="button secondary" type="button"
+                        title="Show file in file explorer">Reveal</button>
+                <button id="openItemButton" class="button secondary" type="button"
+                        title="Open file with default app">Open</button>
+              </div>
+
               <div class="preview-wrap">
                 <img id="detailPreview" alt="Preview">
               </div>
@@ -97,10 +115,10 @@
                 <div><dt>File size</dt><dd id="detailSize"></dd></div>
               </dl>
 
-              <label class="field">
+              <div class="field">
                 <span>Tags</span>
-                <input id="tagsInput" type="text" placeholder="comma, separated, tags">
-              </label>
+                <div id="tagsInputHost" class="tag-input-host"></div>
+              </div>
 
               <label class="field">
                 <span>Description</span>
@@ -110,10 +128,11 @@
               <label class="field">
                 <span>Custom metadata (JSON)</span>
                 <textarea id="metaInput" rows="8" placeholder='{"material": "PETG", "printer": "Voron"}'></textarea>
+                <p id="metaError" class="field-error hidden" role="alert"></p>
               </label>
 
               <div class="row">
-                <button id="saveItemButton" class="button primary">Save changes</button>
+                <button id="saveItemButton" class="button primary" type="button">Save changes</button>
               </div>
 
               <div class="generated-meta">
@@ -124,7 +143,8 @@
           </section>
         </section>
 
-        <section id="tagsView" class="content-view tags-view hidden">
+        <section id="tagsView" class="content-view tags-view hidden" role="tabpanel"
+                 aria-labelledby="viewTagsButton">
           <section class="panel tags-panel">
             <h2>Tags</h2>
             <label class="field">
@@ -157,6 +177,8 @@
               </label>
               <div class="row">
                 <button id="bulkApplyButton" class="button primary" type="button" disabled>Apply bulk update</button>
+                <button id="checkedOnlyToggle" class="button secondary chip-toggle hidden"
+                        type="button" aria-pressed="false">Show checked only</button>
                 <span id="checkedItemCount" class="muted">0 checked</span>
               </div>
             </div>
@@ -167,6 +189,6 @@
       </main>
     </div>
 
-    <script src="/assets/app.js"></script>
+    <script type="module" src="/assets/js/app.js"></script>
   </body>
 </html>
