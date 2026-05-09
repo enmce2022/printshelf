@@ -70,80 +70,54 @@ python run.py
 
 ## Data location and reset
 
-PrintShelf stores local app data in your home directory:
+PrintShelf is portable: it keeps all of its local data in a single folder
+next to where you run it. Nothing is written to your home directory.
 
-- Base data directory: `~/.printshelf`
-- SQLite database: `~/.printshelf/printshelf.sqlite3`
-- Preview cache: `~/.printshelf/previews/`
+Default layout (relative to the current working directory at launch):
 
-Reset options:
+- Base data directory: `./printshelf-data/`
+- SQLite database: `./printshelf-data/printshelf.sqlite3`
+- Preview cache: `./printshelf-data/previews/`
+- Log file: `./printshelf-data/printshelf.log`
 
-- Soft reset: delete only `printshelf.sqlite3` (keeps cached previews).
-- Full reset: delete the entire `~/.printshelf` directory (removes DB, previews, and scan state).
-
-Before resetting, close/stop PrintShelf.
-
-### Soft reset (keep preview cache)
+To use a different location, pass `--data-dir` or set the `PRINTSHELF_DATA_DIR`
+environment variable. The CLI flag takes precedence over the env var.
 
 ```powershell
 # Windows PowerShell
-Remove-Item "$HOME\.printshelf\printshelf.sqlite3" -Force
-```
-
-```cmd
-:: Windows Command Prompt (CMD)
-del "%USERPROFILE%\.printshelf\printshelf.sqlite3"
+uv run python run.py --data-dir D:\printshelf-library
+$env:PRINTSHELF_DATA_DIR = "D:\printshelf-library"; uv run python run.py
 ```
 
 ```bash
 # macOS/Linux
-rm -f ~/.printshelf/printshelf.sqlite3
+uv run python run.py --data-dir ~/printshelf-library
+PRINTSHELF_DATA_DIR=~/printshelf-library uv run python run.py
 ```
 
-Optional verification:
+### Reset
 
-```powershell
-Test-Path "$HOME\.printshelf\printshelf.sqlite3"
-```
+Close the app first, then:
 
-```cmd
-if exist "%USERPROFILE%\.printshelf\printshelf.sqlite3" (echo EXISTS) else (echo MISSING)
-```
+- **Soft reset**: delete `printshelf.sqlite3` from your data directory
+  (keeps the preview cache).
+- **Full reset**: delete the whole data directory.
 
-```bash
-test -f ~/.printshelf/printshelf.sqlite3 && echo EXISTS || echo MISSING
-```
-
-### Full reset (remove all PrintShelf local data)
+Because the data directory lives wherever you ran the app from, reset is
+just a normal file delete — no system paths to chase. For example, if you
+launched with the default layout from the repo root, soft reset is:
 
 ```powershell
 # Windows PowerShell
-Remove-Item "$HOME\.printshelf" -Recurse -Force
-```
-
-```cmd
-:: Windows Command Prompt (CMD)
-rmdir /s /q "%USERPROFILE%\.printshelf"
+Remove-Item .\printshelf-data\printshelf.sqlite3 -Force
 ```
 
 ```bash
 # macOS/Linux
-rm -rf ~/.printshelf
+rm -f ./printshelf-data/printshelf.sqlite3
 ```
 
-Optional verification:
-
-```powershell
-Test-Path "$HOME\.printshelf"
-```
-
-```cmd
-if exist "%USERPROFILE%\.printshelf" (echo EXISTS) else (echo MISSING)
-```
-
-```bash
-test -d ~/.printshelf && echo EXISTS || echo MISSING
-```
+For a full reset, remove the whole `printshelf-data` folder.
 
 If pywebview is unavailable on your platform, the app will still start the local server and open the UI in a browser.
 

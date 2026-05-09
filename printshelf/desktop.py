@@ -79,12 +79,30 @@ class NativeBridge:
             return {"error": str(exc)}
 
 
-def run_desktop_app() -> None:
+DEFAULT_DATA_DIR_NAME = "printshelf-data"
+
+
+def resolve_data_dir(cli_value: str | None = None) -> Path:
+    """Resolve the data directory, in priority order:
+
+    1. Explicit CLI value (`--data-dir`).
+    2. `PRINTSHELF_DATA_DIR` environment variable.
+    3. `./printshelf-data` relative to the current working directory.
+
+    Tilde expansion is applied so `~/foo` works in any source.
+    """
+    raw = cli_value or os.environ.get("PRINTSHELF_DATA_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return (Path.cwd() / DEFAULT_DATA_DIR_NAME).resolve()
+
+
+def run_desktop_app(data_dir: Path | None = None) -> None:
     app_dir = Path(__file__).resolve().parent
     static_dir = app_dir / "static"
-    data_dir = Path.home() / ".printshelf"
+    resolved_data_dir = data_dir if data_dir is not None else resolve_data_dir()
 
-    service = PrintShelfService(data_dir=data_dir)
+    service = PrintShelfService(data_dir=resolved_data_dir)
     app = create_app(service=service, static_dir=static_dir)
     port = _find_free_port()
     url = f"http://127.0.0.1:{port}"
