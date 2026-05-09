@@ -117,11 +117,10 @@ Use the `Tags` view switch in the sidebar to open the dedicated tag explorer.
 
 pywebview's documentation says Linux users need to choose a backend explicitly, for example `pip install pywebview[gtk]` or `pip install pywebview[qt]`.
 
-## Suggested next upgrades
+## Next upgrades i consider
 
 - Background scan jobs with progress reporting
 - SQLite FTS5 for faster full-text search
 - File watching with `watchdog`
 - Multiple library roots
 - Support for decoding embedded QOI thumbnails
-- Packaging with PyInstaller
