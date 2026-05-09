@@ -25,6 +25,7 @@ class ScanRunStore:
         payload = dict(row)
         payload["cancel_requested"] = bool(payload.get("cancel_requested"))
         payload["restart_requested"] = bool(payload.get("restart_requested"))
+        payload["pause_requested"] = bool(payload.get("pause_requested"))
         return payload
 
     def get_state(self) -> dict[str, Any]:
@@ -55,6 +56,7 @@ class ScanRunStore:
                     error = '',
                     cancel_requested = 0,
                     restart_requested = 0,
+                    pause_requested = 0,
                     started_at = CURRENT_TIMESTAMP,
                     finished_at = NULL,
                     updated_at = CURRENT_TIMESTAMP
@@ -76,10 +78,11 @@ class ScanRunStore:
                     root_path = ?,
                     cancel_requested = 1,
                     restart_requested = 1,
+                    pause_requested = 0,
                     message = 'Restart requested. Waiting for current file to finish...',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1
-                  AND status IN ('counting', 'running', 'canceling')
+                  AND status IN ('counting', 'running', 'canceling', 'paused')
                 """,
                 (root_path,),
             )
@@ -95,10 +98,53 @@ class ScanRunStore:
                     status = 'canceling',
                     cancel_requested = 1,
                     restart_requested = 0,
+                    pause_requested = 0,
                     message = 'Cancel requested. Waiting for current file to finish...',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1
-                  AND status IN ('counting', 'running', 'canceling')
+                  AND status IN ('counting', 'running', 'canceling', 'paused')
+                """,
+            )
+            return cursor.rowcount > 0
+
+    def request_pause(self) -> bool:
+        """Pause the active run between file boundaries.
+
+        Refuses to pause once a cancel or restart has been queued; cancel
+        preempts pause and we don't want to silently downgrade.
+        """
+        with self._db._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'paused',
+                    pause_requested = 1,
+                    message = 'Pause requested. Waiting for current file to finish...',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                  AND status IN ('counting', 'running')
+                  AND cancel_requested = 0
+                  AND restart_requested = 0
+                """,
+            )
+            return cursor.rowcount > 0
+
+    def request_resume(self) -> bool:
+        """Resume a paused run. No-ops if a cancel/restart was queued meanwhile."""
+        with self._db._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE scan_state
+                SET
+                    status = 'running',
+                    pause_requested = 0,
+                    message = 'Resuming...',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                  AND status = 'paused'
+                  AND cancel_requested = 0
+                  AND restart_requested = 0
                 """,
             )
             return cursor.rowcount > 0
@@ -127,6 +173,15 @@ class ScanRunStore:
                 return False
             return str(row["run_id"]) == run_id and bool(row["cancel_requested"])
 
+    def is_pause_requested(self, run_id: str) -> bool:
+        with self._db._connect() as conn:
+            row = conn.execute(
+                "SELECT run_id, pause_requested FROM scan_state WHERE id = 1"
+            ).fetchone()
+            if row is None:
+                return False
+            return str(row["run_id"]) == run_id and bool(row["pause_requested"])
+
     def update_progress(
         self,
         run_id: str,
@@ -145,7 +200,10 @@ class ScanRunStore:
                 """
                 UPDATE scan_state
                 SET
-                    status = ?,
+                    status = CASE
+                        WHEN pause_requested = 1 THEN 'paused'
+                        ELSE ?
+                    END,
                     total_files = ?,
                     scanned = ?,
                     changed = ?,
@@ -204,6 +262,7 @@ class ScanRunStore:
                     error = '',
                     cancel_requested = 0,
                     restart_requested = 0,
+                    pause_requested = 0,
                     finished_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1 AND run_id = ? AND cancel_requested = 0
@@ -232,6 +291,7 @@ class ScanRunStore:
                     message = 'Scan failed.',
                     cancel_requested = 0,
                     restart_requested = 0,
+                    pause_requested = 0,
                     finished_at = CURRENT_TIMESTAMP,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1 AND run_id = ?
@@ -277,6 +337,7 @@ class ScanRunStore:
                     error = '',
                     cancel_requested = 0,
                     restart_requested = 0,
+                    pause_requested = 0,
                     started_at = CURRENT_TIMESTAMP,
                     finished_at = NULL,
                     updated_at = CURRENT_TIMESTAMP

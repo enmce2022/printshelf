@@ -145,3 +145,137 @@ def test_start_after_completed_succeeds(scan_store: ScanRunStore) -> None:
     # A fresh start should be allowed after completed.
     assert scan_store.start_run("run-B", "/lib") is True
     assert scan_store.get_state()["run_id"] == "run-B"
+
+
+def test_request_pause_then_resume(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib")
+    scan_store.claim_owner("run-A", "owner-1")
+    scan_store.update_progress(
+        "run-A",
+        status="running",
+        total_files=10,
+        scanned=2,
+        changed=2,
+        reused=0,
+        deleted=0,
+        progress_percent=20.0,
+        message="working",
+    )
+
+    assert scan_store.request_pause() is True
+    state = scan_store.get_state()
+    assert state["status"] == "paused"
+    assert state["pause_requested"] is True
+    assert scan_store.is_pause_requested("run-A") is True
+    assert scan_store.is_pause_requested("run-X") is False
+
+    assert scan_store.request_resume() is True
+    state = scan_store.get_state()
+    assert state["status"] == "running"
+    assert state["pause_requested"] is False
+
+
+def test_request_pause_rejected_when_idle(scan_store: ScanRunStore) -> None:
+    # Fresh store starts in 'idle'.
+    assert scan_store.request_pause() is False
+    assert scan_store.get_state()["status"] == "idle"
+
+
+def test_request_pause_rejected_when_cancel_pending(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib")
+    scan_store.request_cancel()
+
+    # cancel preempts; pause must not silently downgrade.
+    assert scan_store.request_pause() is False
+    state = scan_store.get_state()
+    assert state["status"] == "canceling"
+    assert state["pause_requested"] is False
+
+
+def test_request_pause_rejected_when_restart_pending(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib1")
+    scan_store.request_restart("/lib2")
+
+    assert scan_store.request_pause() is False
+    assert scan_store.get_state()["pause_requested"] is False
+
+
+def test_cancel_while_paused(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib")
+    scan_store.request_pause()
+
+    assert scan_store.request_cancel() is True
+    state = scan_store.get_state()
+    assert state["status"] == "canceling"
+    assert state["cancel_requested"] is True
+    assert state["pause_requested"] is False
+
+
+def test_restart_while_paused(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib1")
+    scan_store.request_pause()
+
+    assert scan_store.request_restart("/lib2") is True
+    state = scan_store.get_state()
+    assert state["status"] == "canceling"
+    assert state["restart_requested"] is True
+    assert state["cancel_requested"] is True
+    assert state["pause_requested"] is False
+    assert state["root_path"] == "/lib2"
+
+
+def test_resume_blocked_after_cancel_pending(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib")
+    scan_store.request_pause()
+    scan_store.request_cancel()  # this also clears pause_requested and flips to canceling
+
+    # Resume must not bring the run back from canceling.
+    assert scan_store.request_resume() is False
+    assert scan_store.get_state()["status"] == "canceling"
+
+
+def test_update_progress_preserves_paused_status(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib")
+    scan_store.claim_owner("run-A", "owner-1")
+    scan_store.request_pause()
+
+    # Worker fires a stale 'running' progress callback while pause_requested=1.
+    scan_store.update_progress(
+        "run-A",
+        status="running",
+        total_files=10,
+        scanned=3,
+        changed=3,
+        reused=0,
+        deleted=0,
+        progress_percent=30.0,
+        message="working",
+    )
+
+    state = scan_store.get_state()
+    # Status stays 'paused' even though caller passed 'running'.
+    assert state["status"] == "paused"
+    assert state["pause_requested"] is True
+    # Counters still update.
+    assert state["scanned"] == 3
+
+
+def test_complete_run_clears_pause_requested(scan_store: ScanRunStore) -> None:
+    scan_store.start_run("run-A", "/lib")
+    scan_store.claim_owner("run-A", "owner-1")
+    scan_store.request_pause()
+    # Resume so cancel_requested stays 0 (complete_run gates on that).
+    scan_store.request_resume()
+    # Re-pause to assert complete still wins over a lingering pause flag.
+    scan_store.request_pause()
+
+    completed = scan_store.complete_run(
+        "run-A",
+        {"scanned": 5, "changed": 5, "reused": 0, "deleted": 0},
+        "done",
+    )
+    # complete_run only gates on cancel_requested, not pause_requested.
+    assert completed is True
+    state = scan_store.get_state()
+    assert state["status"] == "completed"
+    assert state["pause_requested"] is False

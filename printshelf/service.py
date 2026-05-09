@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,8 @@ from .logging_setup import configure_logging
 from .scan_state import ScanRunStore
 from .scanner import ScanCanceledError, count_supported_files, scan_library
 
-ACTIVE_SCAN_STATUSES = {"counting", "running", "canceling"}
+ACTIVE_SCAN_STATUSES = {"counting", "running", "canceling", "paused"}
+PAUSE_POLL_SECONDS = 0.5
 
 log = logging.getLogger("printshelf.service")
 
@@ -61,6 +63,14 @@ class PrintShelfService:
 
     def cancel_scan(self) -> dict[str, Any]:
         self.scan_store.request_cancel()
+        return self.scan_store.get_state()
+
+    def pause_scan(self) -> dict[str, Any]:
+        self.scan_store.request_pause()
+        return self.scan_store.get_state()
+
+    def resume_scan(self) -> dict[str, Any]:
+        self.scan_store.request_resume()
         return self.scan_store.get_state()
 
     def get_scan_status(self) -> dict[str, Any]:
@@ -145,6 +155,17 @@ class PrintShelfService:
                 )
             return cancel
 
+        def wait_if_paused() -> None:
+            while True:
+                state = self.scan_store.get_state()
+                if state.get("run_id") != run_id:
+                    return
+                if not bool(state.get("pause_requested")):
+                    return
+                if bool(state.get("cancel_requested")):
+                    return
+                time.sleep(PAUSE_POLL_SECONDS)
+
         self.scan_store.update_progress(
             run_id,
             status="counting",
@@ -157,7 +178,9 @@ class PrintShelfService:
             message="Counting files...",
         )
         total_files = count_supported_files(
-            Path(root_path), should_cancel=should_cancel
+            Path(root_path),
+            should_cancel=should_cancel,
+            wait_if_paused=wait_if_paused,
         )
 
         if should_cancel():
@@ -201,6 +224,7 @@ class PrintShelfService:
                 total_files=total_files,
                 progress_callback=on_progress,
                 should_cancel=should_cancel,
+                wait_if_paused=wait_if_paused,
             )
         except ScanCanceledError:
             self.scan_store.mark_canceling(

@@ -150,6 +150,10 @@ textarea {
   align-items: center;
 }
 
+.row + .row {
+  margin-top: var(--space-2);
+}
+
 /* === BUTTONS === */
 .button {
   appearance: none;

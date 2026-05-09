@@ -24,6 +24,9 @@ function scanStatusText(scan) {
   if (status === "failed") {
     return error || message || "Scan failed.";
   }
+  if (status === "paused") {
+    return message || "Paused.";
+  }
   if (ACTIVE_SCAN_STATUSES.has(status) || status === "completed") {
     return message || "Scanning...";
   }
@@ -42,6 +45,14 @@ function applyScanStatus(scan) {
   scanButton.textContent = isActive ? "Restart scan" : "Scan library";
   $("cancelScanButton").classList.toggle("hidden", !isActive);
   $("cancelScanButton").disabled = status === "canceling";
+
+  const pauseResumeButton = $("pauseResumeButton");
+  if (pauseResumeButton) {
+    const showPauseResume = isActive && status !== "canceling";
+    pauseResumeButton.classList.toggle("hidden", !showPauseResume);
+    pauseResumeButton.textContent = status === "paused" ? "Resume" : "Pause";
+    pauseResumeButton.disabled = false;
+  }
 
   setScanStatus(scanStatusText(scan));
 
@@ -163,6 +174,22 @@ async function cancelScan() {
   }
 }
 
+async function togglePauseResume() {
+  const button = $("pauseResumeButton");
+  if (!button || button.classList.contains("hidden")) return;
+  const isPaused = button.textContent === "Resume";
+  button.disabled = true;
+  try {
+    const endpoint = isPaused ? "/api/scan/resume" : "/api/scan/pause";
+    const scan = await api(endpoint, { method: "POST" });
+    applyScanStatus(scan);
+    toast.info(isPaused ? "Resuming scan." : "Pause requested.");
+  } catch (error) {
+    toast.error(error.message);
+    button.disabled = false;
+  }
+}
+
 async function saveRootOnly() {
   try {
     await saveRootPath();
@@ -184,6 +211,9 @@ export function initScanControls() {
   });
   $("cancelScanButton").addEventListener("click", () => {
     cancelScan();
+  });
+  $("pauseResumeButton").addEventListener("click", () => {
+    togglePauseResume();
   });
 
   document.addEventListener("visibilitychange", () => {

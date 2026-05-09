@@ -82,7 +82,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 # Append future schema changes here as `(version, sql)` tuples. The runner
 # applies each migration whose version is not yet recorded, in ascending order.
-_MIGRATIONS: list[tuple[int, str]] = []
+_MIGRATIONS: list[tuple[int, str]] = [
+    (
+        1,
+        """
+        ALTER TABLE scan_state
+        ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
+]
 
 
 class Database:

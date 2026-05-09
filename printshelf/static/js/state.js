@@ -20,4 +20,9 @@ export const state = {
   bulkInFlight: false,
 };
 
-export const ACTIVE_SCAN_STATUSES = new Set(["counting", "running", "canceling"]);
+export const ACTIVE_SCAN_STATUSES = new Set([
+  "counting",
+  "running",
+  "canceling",
+  "paused",
+]);

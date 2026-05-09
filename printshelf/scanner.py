@@ -15,9 +15,13 @@ class ScanCanceledError(RuntimeError):
 
 
 def _iter_supported_files(
-    root_path: Path, should_cancel: Callable[[], bool] | None = None
+    root_path: Path,
+    should_cancel: Callable[[], bool] | None = None,
+    wait_if_paused: Callable[[], None] | None = None,
 ) -> Iterator[tuple[Path, str]]:
     for current_root, dirnames, filenames in os.walk(root_path):
+        if wait_if_paused is not None:
+            wait_if_paused()
         if should_cancel is not None and should_cancel():
             raise ScanCanceledError("Scan canceled")
 
@@ -33,16 +37,22 @@ def _iter_supported_files(
             suffix = file_path.suffix.lower()
             if suffix not in SUPPORTED_EXTENSIONS:
                 continue
+            if wait_if_paused is not None:
+                wait_if_paused()
             if should_cancel is not None and should_cancel():
                 raise ScanCanceledError("Scan canceled")
             yield file_path, SUPPORTED_EXTENSIONS[suffix]
 
 
 def count_supported_files(
-    root_path: Path, should_cancel: Callable[[], bool] | None = None
+    root_path: Path,
+    should_cancel: Callable[[], bool] | None = None,
+    wait_if_paused: Callable[[], None] | None = None,
 ) -> int:
     count = 0
-    for _file_path, _item_type in _iter_supported_files(root_path, should_cancel):
+    for _file_path, _item_type in _iter_supported_files(
+        root_path, should_cancel, wait_if_paused
+    ):
         count += 1
     return count
 
@@ -55,6 +65,7 @@ def scan_library(
     total_files: int | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    wait_if_paused: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     root_path = root_path.expanduser().resolve()
     if not root_path.exists():
@@ -63,14 +74,18 @@ def scan_library(
         raise NotADirectoryError(f"Library root is not a folder: {root_path}")
 
     if total_files is None:
-        total_files = count_supported_files(root_path, should_cancel)
+        total_files = count_supported_files(root_path, should_cancel, wait_if_paused)
 
     discovered_paths: set[str] = set()
     scanned = 0
     changed = 0
     reused = 0
 
-    for file_path, item_type in _iter_supported_files(root_path, should_cancel):
+    for file_path, item_type in _iter_supported_files(
+        root_path, should_cancel, wait_if_paused
+    ):
+        if wait_if_paused is not None:
+            wait_if_paused()
         if should_cancel is not None and should_cancel():
             raise ScanCanceledError("Scan canceled")
 
@@ -137,6 +152,8 @@ def scan_library(
                 }
             )
 
+    if wait_if_paused is not None:
+        wait_if_paused()
     if should_cancel is not None and should_cancel():
         raise ScanCanceledError("Scan canceled")
     existing_paths = set(db.list_paths_for_root(str(root_path)))
