@@ -18,10 +18,20 @@ def main() -> None:
             "directory. Can also be set via PRINTSHELF_DATA_DIR."
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Number of Uvicorn worker processes to run (default: 1).",
+    )
     args = parser.parse_args()
 
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
+
     data_dir = resolve_data_dir(args.data_dir)
-    run_desktop_app(data_dir=data_dir)
+    run_desktop_app(data_dir=data_dir, workers=args.workers)
 
 
 if __name__ == "__main__":

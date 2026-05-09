@@ -34,39 +34,21 @@ PrusaSlicer can emit both PNG and QOI thumbnails in modern G-code. This starter 
 PrintShelf uses [uv](https://docs.astral.sh/uv/) for environment and dependency management. Install uv first, then:
 
 ```
-uv sync --extra dev    # creates .venv and installs runtime + dev tooling
-uv run python run.py   # launch the desktop app
+uv sync --extra dev          # creates .venv and installs runtime + dev tooling
+uv run python run.py         # launch the desktop app
 ```
 
 `uv.lock` is committed, so `uv sync` produces an identical environment on every machine. The optional `--extra dev` pulls in formatter/linter/test tooling (`black`, `isort`, `ruff`, `pytest`).
 
-If you prefer the classic flow it still works (`python -m venv .venv`, then `pip install -e .[dev]`), but uv is the documented path.
+### Worker concurrency
 
-Worker model:
-PrintShelf starts Uvicorn with a single worker (`1`) by default.
-The app does not set `workers` explicitly in code.
-If `WEB_CONCURRENCY` is set in the environment, Uvicorn can override the default worker count.
+PrintShelf starts Uvicorn with a single worker by default. Pass `--workers N` to spawn N worker processes:
 
-Set `WEB_CONCURRENCY` (optional):
-Use this to override the default worker count for the current shell session. This is temporary unless you persist it in your shell/profile settings.
-
-```powershell
-# Windows PowerShell (current session)
-$env:WEB_CONCURRENCY = "2"
-python run.py
+```
+uv run python run.py --workers 2
 ```
 
-```cmd
-:: Windows Command Prompt (current session)
-set WEB_CONCURRENCY=2
-python run.py
-```
-
-```bash
-# macOS/Linux (current shell session)
-export WEB_CONCURRENCY=2
-python run.py
-```
+When `N > 1`, Uvicorn's multiprocess supervisor runs in a background thread alongside the pywebview window, and each worker subprocess opens its own connection to the shared SQLite file in the data directory. Scan state is coordinated cross-process via the DB. The native "scan" button on the toolbar calls into the parent process directly; HTTP requests from the UI are load-balanced across workers.
 
 ## Data location and reset
 

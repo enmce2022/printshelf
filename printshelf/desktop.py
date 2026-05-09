@@ -97,49 +97,106 @@ def resolve_data_dir(cli_value: str | None = None) -> Path:
     return (Path.cwd() / DEFAULT_DATA_DIR_NAME).resolve()
 
 
-def run_desktop_app(data_dir: Path | None = None) -> None:
+def create_default_app():
+    """App factory used by uvicorn worker subprocesses.
+
+    Each spawned worker re-imports this module and calls this factory to build
+    its own `PrintShelfService` and FastAPI app. The data directory is read
+    from the `PRINTSHELF_DATA_DIR` env var, which `run_desktop_app` exports
+    before launching the multiprocess supervisor.
+    """
+    data_dir = resolve_data_dir()
+    static_dir = Path(__file__).resolve().parent / "static"
+    service = PrintShelfService(data_dir=data_dir)
+    return create_app(service=service, static_dir=static_dir)
+
+
+def run_desktop_app(data_dir: Path | None = None, workers: int = 1) -> None:
     app_dir = Path(__file__).resolve().parent
     static_dir = app_dir / "static"
     resolved_data_dir = data_dir if data_dir is not None else resolve_data_dir()
 
+    # Parent's service backs the NativeBridge (pick_folder, scan_now, ...).
+    # When workers > 1, it shares the same SQLite file with the children but
+    # serves no HTTP traffic itself.
     service = PrintShelfService(data_dir=resolved_data_dir)
-    app = create_app(service=service, static_dir=static_dir)
     port = _find_free_port()
     url = f"http://127.0.0.1:{port}"
 
-    server_config = uvicorn.Config(
-        app=app, host="127.0.0.1", port=port, log_level="warning"
-    )
-    server = uvicorn.Server(server_config)
+    supervisor = None
+    if workers > 1:
+        # Multiprocess path: uvicorn supervisor spawns N workers; each worker
+        # constructs its own service via create_default_app. Cross-process scan
+        # state is coordinated via the DB (run_id ownership tokens).
+        os.environ["PRINTSHELF_DATA_DIR"] = str(resolved_data_dir)
 
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
+        from uvicorn.supervisors import Multiprocess
 
-    for _ in range(100):
-        if getattr(server, "started", False):
-            break
-        time.sleep(0.05)
+        config = uvicorn.Config(
+            "printshelf.desktop:create_default_app",
+            factory=True,
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+            workers=workers,
+        )
+        sock = config.bind_socket()
+        server = uvicorn.Server(config)
+        # Multiprocess.__init__ registers signal handlers; must run on main thread.
+        supervisor = Multiprocess(config, target=server.run, sockets=[sock])
+        thread = threading.Thread(target=supervisor.run, daemon=True)
+        thread.start()
+        # Socket is already listening; give children a moment to start accepting.
+        time.sleep(0.3)
+    else:
+        app = create_app(service=service, static_dir=static_dir)
+        config = uvicorn.Config(
+            app=app, host="127.0.0.1", port=port, log_level="warning"
+        )
+        server = uvicorn.Server(config)
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+        for _ in range(100):
+            if getattr(server, "started", False):
+                break
+            time.sleep(0.05)
 
     try:
-        import webview
-
-        bridge = NativeBridge(service)
-        window = webview.create_window(
-            title="PrintShelf",
-            url=url,
-            js_api=bridge,
-            width=1380,
-            height=920,
-            min_size=(980, 700),
-        )
-        bridge._attach_window(window)
-        webview.start()
-    except Exception:
-        webbrowser.open(url)
-        print(f"PrintShelf is running at {url}")
-        print("A browser window should open automatically. Press Ctrl+C to stop.")
         try:
-            while thread.is_alive():
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            pass
+            import webview
+
+            bridge = NativeBridge(service)
+            window = webview.create_window(
+                title="PrintShelf",
+                url=url,
+                js_api=bridge,
+                width=1380,
+                height=920,
+                min_size=(980, 700),
+            )
+            bridge._attach_window(window)
+            webview.start()
+        except Exception:
+            webbrowser.open(url)
+            print(f"PrintShelf is running at {url}")
+            print("A browser window should open automatically. Press Ctrl+C to stop.")
+            try:
+                while thread.is_alive():
+                    time.sleep(1.0)
+            except KeyboardInterrupt:
+                pass
+    finally:
+        if supervisor is not None:
+            # Stop the supervisor's monitoring loop, then force-kill children
+            # directly. uvicorn's terminate_all uses CTRL_BREAK_EVENT on
+            # Windows, which doesn't reach children spawned without their own
+            # process group — so we call TerminateProcess via Process.kill()
+            # to guarantee they exit.
+            supervisor.should_exit.set()
+            thread.join(timeout=1.0)
+            for proc in supervisor.processes:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            thread.join(timeout=5.0)
