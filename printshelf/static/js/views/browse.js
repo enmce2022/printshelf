@@ -27,8 +27,7 @@ function findItemById(id) {
 }
 
 function buildEmptyStateHtml() {
-  const root = $("rootPathInput").value.trim();
-  const hasRoot = Boolean(root);
+  const hasRoot = Boolean(state.rootPath);
   const hasScanned = Boolean(state.lastLoadedRunId);
   const filtered =
     Boolean($("searchInput").value.trim()) ||

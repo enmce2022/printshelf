@@ -143,14 +143,18 @@ async function saveRootPath() {
     method: "POST",
     body: JSON.stringify({ root_path: rootPath }),
   });
-  $("rootPathInput").value = result.root_path || "";
+  const saved = result.root_path || "";
+  $("rootPathInput").value = saved;
+  state.rootPath = saved;
 }
 
 async function browseRoot() {
   if (!state.hasBridge || !window.pywebview?.api?.pick_folder) return;
   const result = await window.pywebview.api.pick_folder();
   if (!result || typeof result !== "object") return;
-  $("rootPathInput").value = result.root_path || $("rootPathInput").value || "";
+  const picked = result.root_path || $("rootPathInput").value || "";
+  $("rootPathInput").value = picked;
+  state.rootPath = picked;
 }
 
 async function startScan() {
@@ -250,5 +254,7 @@ export async function initialScanStatus() {
 
 export async function loadConfig() {
   const config = await api("/api/config");
-  $("rootPathInput").value = config.root_path || "";
+  const saved = config.root_path || "";
+  $("rootPathInput").value = saved;
+  state.rootPath = saved;
 }

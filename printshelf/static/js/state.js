@@ -1,5 +1,6 @@
 export const state = {
   items: [],
+  rootPath: "",
   selectedItemId: null,
   hasBridge: false,
   bridgeDetected: false,
