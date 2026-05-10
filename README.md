@@ -18,7 +18,7 @@ A simple Python desktop app for browsing a library of `.stl` and `.gcode` files.
 ### STL
 - Load the mesh with `trimesh`
 - Try to place the model in a stable resting orientation
-- Render a clean isometric preview with `matplotlib`
+- Render a clean isometric preview with `pyvista` (VTK offscreen)
 
 ### G-code
 - First try to extract an embedded thumbnail block
@@ -49,6 +49,18 @@ uv run python run.py --workers 2
 ```
 
 When `N > 1`, Uvicorn's multiprocess supervisor runs in a background thread alongside the pywebview window, and each worker subprocess opens its own connection to the shared SQLite file in the data directory. Scan state is coordinated cross-process via the DB. The native "scan" button on the toolbar calls into the parent process directly; HTTP requests from the UI are load-balanced across workers.
+
+### Scan parallelism
+
+Preview generation (STL mesh + G-code toolpath rendering) is the dominant cost during a library scan. Pass `--scan-workers N` to render previews on a process pool:
+
+```
+uv run python run.py --scan-workers 7
+```
+
+`--scan-workers` defaults to `1` (sequential, current behavior). Set it to roughly `cpu_count - 1` for the fastest scans; each worker holds a VTK render context plus a trimesh state in memory (~150 MB), so a 16-core box at `--scan-workers 15` will use a few GB during a scan. The flag is independent of `--workers` (HTTP). Can also be set via `PRINTSHELF_SCAN_WORKERS`.
+
+Cancel and pause continue to work: cancellation drops pending work and lets in-flight files finish; pause stops dispatching new work until you resume.
 
 ## Data location and reset
 

@@ -20,7 +20,7 @@ log = logging.getLogger("printshelf.service")
 
 
 class PrintShelfService:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, *, scan_workers: int = 1) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         configure_logging(self.data_dir)
@@ -28,6 +28,7 @@ class PrintShelfService:
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         self.db = Database(self.data_dir / "printshelf.sqlite3")
         self.scan_store = ScanRunStore(self.db)
+        self.scan_workers = max(1, int(scan_workers))
         self._scan_thread_lock = threading.Lock()
         self._scan_thread: threading.Thread | None = None
         self._scan_owner_token = uuid.uuid4().hex
@@ -225,6 +226,7 @@ class PrintShelfService:
                 progress_callback=on_progress,
                 should_cancel=should_cancel,
                 wait_if_paused=wait_if_paused,
+                scan_workers=self.scan_workers,
             )
         except ScanCanceledError:
             self.scan_store.mark_canceling(

@@ -25,13 +25,31 @@ def main() -> None:
         metavar="N",
         help="Number of Uvicorn worker processes to run (default: 1).",
     )
+    parser.add_argument(
+        "--scan-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Parallelism for preview generation during library scans (default: "
+            "1 = sequential). Higher values use a process pool to render STL "
+            "and G-code thumbnails on multiple CPU cores. Can also be set via "
+            "PRINTSHELF_SCAN_WORKERS."
+        ),
+    )
     args = parser.parse_args()
 
     if args.workers < 1:
         parser.error("--workers must be >= 1")
+    if args.scan_workers < 1:
+        parser.error("--scan-workers must be >= 1")
 
     data_dir = resolve_data_dir(args.data_dir)
-    run_desktop_app(data_dir=data_dir, workers=args.workers)
+    run_desktop_app(
+        data_dir=data_dir,
+        workers=args.workers,
+        scan_workers=args.scan_workers,
+    )
 
 
 if __name__ == "__main__":

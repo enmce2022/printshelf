@@ -15,8 +15,8 @@ dependencies = [
   "pywebview>=6.1",
   "trimesh>=4.6",
   "numpy>=2.1",
-  "matplotlib>=3.9",
   "pillow>=11.0",
+  "pyvista>=0.44",
 ]
 
 [project.optional-dependencies]

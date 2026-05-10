@@ -9,25 +9,41 @@ import re
 from pathlib import Path
 from typing import Any
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
+import pyvista as pv
 import trimesh
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 from PIL import Image, ImageDraw
+
+# VTK offscreen rendering on Windows works without a display when this is set
+# at import time. Each pool worker process imports this module fresh, so the
+# flag is process-local — no global state leaks between workers.
+pv.OFF_SCREEN = True
 
 log = logging.getLogger("printshelf.preview")
 
 # Render constants — kept here so future tuning lives in one place.
-RENDER_FIGSIZE = (5.2, 5.2)
-RENDER_DPI = 120
-STL_VIEW_ELEV = 24
-STL_VIEW_AZIM = -58
-GCODE_VIEW_ELEV = 26
-GCODE_VIEW_AZIM = -58
+RENDER_WINDOW_SIZE = (640, 640)
 GCODE_MAX_SEGMENTS = 60_000
+
+# Lazy, process-local plotter. Re-initialized inside each ProcessPoolExecutor
+# worker; never shared across processes. Reused across files within a worker
+# because pv.Plotter construction is the dominant per-file cost.
+_PLOTTER: pv.Plotter | None = None
+
+
+def _get_plotter() -> pv.Plotter:
+    global _PLOTTER
+    if _PLOTTER is None:
+        _PLOTTER = pv.Plotter(off_screen=True, window_size=RENDER_WINDOW_SIZE)
+        _PLOTTER.set_background("white")
+    return _PLOTTER
+
+
+def _reset_plotter(plotter: pv.Plotter) -> None:
+    plotter.clear()
+    plotter.remove_all_lights()
+    plotter.enable_lightkit()
+
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 THUMB_START_RE = re.compile(
@@ -60,16 +76,11 @@ def _placeholder_preview(output_path: Path, title: str, subtitle: str = "") -> N
     image.save(output_path)
 
 
-def _set_equal_axes(ax, points: np.ndarray) -> None:
-    mins = points.min(axis=0)
-    maxs = points.max(axis=0)
-    center = (mins + maxs) / 2.0
-    span = np.max(maxs - mins)
-    span = max(span, 1.0)
-    radius = span / 2.0
-    ax.set_xlim(center[0] - radius, center[0] + radius)
-    ax.set_ylim(center[1] - radius, center[1] + radius)
-    ax.set_zlim(center[2] - radius, center[2] + radius)
+def _trimesh_to_polydata(mesh: trimesh.Trimesh) -> pv.PolyData:
+    vertices = np.asarray(mesh.vertices, dtype=np.float64)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    faces_vtk = np.column_stack([np.full(len(faces), 3, dtype=np.int64), faces]).ravel()
+    return pv.PolyData(vertices, faces_vtk)
 
 
 def _load_mesh(file_path: Path) -> trimesh.Trimesh:
@@ -111,33 +122,24 @@ def render_stl_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
 
     mesh.apply_translation(-mesh.bounds.mean(axis=0))
 
-    triangles = mesh.triangles
-    normals = (
-        mesh.face_normals
-        if len(mesh.face_normals) == len(mesh.faces)
-        else np.zeros((len(mesh.faces), 3))
+    poly = _trimesh_to_polydata(mesh)
+
+    plotter = _get_plotter()
+    _reset_plotter(plotter)
+    plotter.add_mesh(
+        poly,
+        color="#c8c8cc",
+        smooth_shading=True,
+        specular=0.25,
+        specular_power=12,
+        ambient=0.18,
+        show_edges=False,
     )
-    light = np.array([0.4, -0.5, 1.0], dtype=float)
-    light /= np.linalg.norm(light)
-    intensity = np.clip(normals @ light, 0.18, 1.0)
-    colors = plt.cm.Greys(0.25 + 0.55 * intensity)
-
-    fig = plt.figure(figsize=RENDER_FIGSIZE, dpi=RENDER_DPI)
-    ax = fig.add_subplot(111, projection="3d")
-    collection = Poly3DCollection(triangles, linewidths=0.03)
-    collection.set_facecolor(colors)
-    collection.set_edgecolor((0.0, 0.0, 0.0, 0.03))
-    ax.add_collection3d(collection)
-
-    _set_equal_axes(ax, mesh.vertices)
-    ax.view_init(elev=STL_VIEW_ELEV, azim=STL_VIEW_AZIM)
-    ax.set_axis_off()
-    fig.patch.set_alpha(0)
-    ax.patch.set_alpha(0)
+    plotter.view_isometric()
+    plotter.camera.zoom(1.25)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, transparent=True, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
+    plotter.screenshot(str(output_path), transparent_background=True, return_img=False)
 
     extents = original_bounds[1] - original_bounds[0]
     return {
@@ -321,34 +323,43 @@ def render_gcode_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
         step = math.ceil(len(segments) / GCODE_MAX_SEGMENTS)
         segments = segments[::step]
 
-    lines = [[seg[0], seg[1]] for seg in segments]
-    z_values = np.array([seg[2] for seg in segments], dtype=float)
-    points = np.array([point for seg in lines for point in seg], dtype=float)
-    z_min = float(z_values.min())
-    z_max = float(z_values.max())
-    span = max(z_max - z_min, 1e-9)
-    colors = plt.cm.viridis((z_values - z_min) / span)
+    n = len(segments)
+    points = np.empty((2 * n, 3), dtype=np.float64)
+    for i, (start, end, _z) in enumerate(segments):
+        points[2 * i] = start
+        points[2 * i + 1] = end
+    lines_vtk = np.column_stack(
+        [
+            np.full(n, 2, dtype=np.int64),
+            np.arange(0, 2 * n, 2, dtype=np.int64),
+            np.arange(1, 2 * n, 2, dtype=np.int64),
+        ]
+    ).ravel()
 
-    fig = plt.figure(figsize=RENDER_FIGSIZE, dpi=RENDER_DPI)
-    ax = fig.add_subplot(111, projection="3d")
-    collection = Line3DCollection(lines, colors=colors, linewidths=0.9, alpha=0.95)
-    ax.add_collection3d(collection)
+    poly = pv.PolyData(points, lines=lines_vtk)
+    poly.point_data["height"] = points[:, 2].astype(np.float64)
 
-    _set_equal_axes(ax, points)
-    ax.view_init(elev=GCODE_VIEW_ELEV, azim=GCODE_VIEW_AZIM)
-    ax.set_axis_off()
-    fig.patch.set_alpha(0)
-    ax.patch.set_alpha(0)
+    plotter = _get_plotter()
+    _reset_plotter(plotter)
+    plotter.add_mesh(
+        poly,
+        scalars="height",
+        cmap="viridis",
+        line_width=1.5,
+        show_scalar_bar=False,
+        lighting=False,
+    )
+    plotter.view_isometric()
+    plotter.camera.zoom(1.25)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, transparent=True, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
+    plotter.screenshot(str(output_path), transparent_background=True, return_img=False)
 
     metadata.update(
         {
             "preview_mode": "generated-toolpath",
             "segment_count_raw": raw_segment_count,
-            "segment_count_previewed": len(segments),
+            "segment_count_previewed": n,
             "layer_count_estimate": len(unique_z),
             "extrusion_length_mm": round(extrusion_length, 3),
             "toolpath_bounds_mm": [

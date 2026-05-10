@@ -97,6 +97,19 @@ def resolve_data_dir(cli_value: str | None = None) -> Path:
     return (Path.cwd() / DEFAULT_DATA_DIR_NAME).resolve()
 
 
+def _resolve_scan_workers(cli_value: int | None = None) -> int:
+    if cli_value is not None and cli_value > 0:
+        return cli_value
+    raw = os.environ.get("PRINTSHELF_SCAN_WORKERS")
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return 1
+        return max(1, parsed)
+    return 1
+
+
 def create_default_app():
     """App factory used by uvicorn worker subprocesses.
 
@@ -107,11 +120,15 @@ def create_default_app():
     """
     data_dir = resolve_data_dir()
     static_dir = Path(__file__).resolve().parent / "static"
-    service = PrintShelfService(data_dir=data_dir)
+    service = PrintShelfService(data_dir=data_dir, scan_workers=_resolve_scan_workers())
     return create_app(service=service, static_dir=static_dir)
 
 
-def run_desktop_app(data_dir: Path | None = None, workers: int = 1) -> None:
+def run_desktop_app(
+    data_dir: Path | None = None,
+    workers: int = 1,
+    scan_workers: int = 1,
+) -> None:
     app_dir = Path(__file__).resolve().parent
     static_dir = app_dir / "static"
     resolved_data_dir = data_dir if data_dir is not None else resolve_data_dir()
@@ -119,7 +136,7 @@ def run_desktop_app(data_dir: Path | None = None, workers: int = 1) -> None:
     # Parent's service backs the NativeBridge (pick_folder, scan_now, ...).
     # When workers > 1, it shares the same SQLite file with the children but
     # serves no HTTP traffic itself.
-    service = PrintShelfService(data_dir=resolved_data_dir)
+    service = PrintShelfService(data_dir=resolved_data_dir, scan_workers=scan_workers)
     port = _find_free_port()
     url = f"http://127.0.0.1:{port}"
 
@@ -129,6 +146,7 @@ def run_desktop_app(data_dir: Path | None = None, workers: int = 1) -> None:
         # constructs its own service via create_default_app. Cross-process scan
         # state is coordinated via the DB (run_id ownership tokens).
         os.environ["PRINTSHELF_DATA_DIR"] = str(resolved_data_dir)
+        os.environ["PRINTSHELF_SCAN_WORKERS"] = str(scan_workers)
 
         from uvicorn.supervisors import Multiprocess
 
