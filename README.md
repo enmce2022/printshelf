@@ -2,6 +2,8 @@
 
 A simple Python desktop app for browsing a library of `.stl` and `.gcode` files.
 
+![PrintShelf browsing a library of STL files with previews and a detail pane](docs/images/app_preview.png)
+
 ## What it does
 
 - Scans a selected folder recursively for STL and G-code files
