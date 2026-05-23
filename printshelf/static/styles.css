@@ -902,6 +902,20 @@ textarea {
   }
 }
 
+/* === SIDEBAR HELP TEXT === */
+.field .muted.small {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin-top: var(--space-1);
+}
+
+.field .muted.small code {
+  background: rgba(15, 23, 42, 0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
 /* === GROUPS / CATALOG TOOLBAR === */
 .catalog-toolbar {
   display: flex;

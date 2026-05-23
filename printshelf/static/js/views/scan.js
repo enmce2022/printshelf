@@ -257,4 +257,33 @@ export async function loadConfig() {
   const saved = config.root_path || "";
   $("rootPathInput").value = saved;
   state.rootPath = saved;
+  const input = $("ignoreDirsInput");
+  if (input) {
+    const patterns = Array.isArray(config.dirs_to_ignore_when_group)
+      ? config.dirs_to_ignore_when_group
+      : [];
+    input.value = patterns.join("\n");
+  }
+}
+
+export function parseIgnoreDirsInput(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export async function setIgnoreDirs(patterns) {
+  const config = await api("/api/config", {
+    method: "POST",
+    body: JSON.stringify({
+      root_path: state.rootPath || "",
+      dirs_to_ignore_when_group: patterns,
+    }),
+  });
+  const input = $("ignoreDirsInput");
+  if (input && Array.isArray(config.dirs_to_ignore_when_group)) {
+    // Reflect the server's normalized list (dedup, whitespace stripped).
+    input.value = config.dirs_to_ignore_when_group.join("\n");
+  }
 }

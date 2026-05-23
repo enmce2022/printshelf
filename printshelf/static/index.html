@@ -41,6 +41,16 @@
             <button id="cancelScanButton" class="button secondary icon-button hidden" type="button"
                     title="Cancel scan" aria-label="Cancel scan">✕</button>
           </div>
+          <label class="field">
+            <span>Ignore dirs when grouping</span>
+            <textarea id="ignoreDirsInput" rows="3"
+                      placeholder="files&#10;glob:*_files&#10;re:^v\d+$"></textarea>
+            <p class="muted small">
+              One per line. Plain text = exact (case-insensitive).
+              Prefix with <code>glob:</code> or <code>re:</code> for wildcards or regex.
+              When a parent folder's leaf name matches, the grandparent is used as the group.
+            </p>
+          </label>
           <div id="scanProgressBar" class="scan-progress hidden" role="progressbar"
                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <div id="scanProgressFill" class="scan-progress-fill"></div>

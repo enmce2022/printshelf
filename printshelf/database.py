@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator, Sequence
 
 log = logging.getLogger("printshelf.database")
 
@@ -114,33 +116,174 @@ _MIGRATIONS: list[tuple[int, str]] = [
 ]
 
 
-def _derive_group_path(relative_path: str) -> str:
+SETTING_DIRS_TO_IGNORE_WHEN_GROUP = "dirs_to_ignore_when_group"
+_LEGACY_SETTING_SKIP_FILES_DIR = "group_skip_files_dir"
+DEFAULT_DIRS_TO_IGNORE: list[str] = ["files"]
+
+
+def _compile_ignore_patterns(
+    patterns: Iterable[str],
+) -> list[Callable[[str], bool]]:
+    """Turn user-facing pattern strings into a flat list of matcher callables.
+
+    Syntax:
+      * plain text → exact (case-insensitive) match against the folder leaf
+      * ``glob:<pat>`` → fnmatch glob, matched case-insensitively
+      * ``re:<pat>`` → Python regex, matched with ``re.IGNORECASE`` and
+        ``fullmatch`` against the leaf
+
+    Invalid regex patterns are logged and skipped rather than raised — a
+    typo in the settings UI should not crash every catalog query."""
+    matchers: list[Callable[[str], bool]] = []
+    for raw in patterns:
+        if raw is None:
+            continue
+        pat = str(raw).strip()
+        if not pat:
+            continue
+        if pat.startswith("glob:"):
+            body = pat[5:].casefold()
+            if not body:
+                continue
+            matchers.append(
+                lambda leaf, b=body: fnmatch.fnmatchcase(leaf.casefold(), b)
+            )
+        elif pat.startswith("re:"):
+            body = pat[3:]
+            if not body:
+                continue
+            try:
+                compiled = re.compile(body, re.IGNORECASE)
+            except re.error as exc:
+                log.warning("invalid regex ignore pattern %r: %s", pat, exc)
+                continue
+            matchers.append(lambda leaf, c=compiled: bool(c.fullmatch(leaf)))
+        else:
+            body = pat.casefold()
+            matchers.append(lambda leaf, b=body: leaf.casefold() == b)
+    return matchers
+
+
+def _derive_group_path(
+    relative_path: str,
+    ignore_matchers: Sequence[Callable[[str], bool]] = (),
+) -> str:
     """Parent directory of a relative path, normalized to forward slashes.
 
     Empty string when the file lives in the library root (loose / Uncategorized).
     Used both as a SQLite function and inside the service layer — keep behaviour
-    identical to the JS-side renderer's expectation."""
+    identical to the JS-side renderer's expectation.
+
+    When ``ignore_matchers`` is non-empty and the immediate parent's leaf name
+    matches any of them, the grandparent is returned instead. Matches a single
+    level only — no recursion — so ``a/files/files/x`` becomes ``a/files``."""
     if not relative_path:
         return ""
     normalized = str(relative_path).replace("\\", "/")
     head, _, _ = normalized.rpartition("/")
+    if ignore_matchers and head:
+        grandparent, _, leaf = head.rpartition("/")
+        if any(match(leaf) for match in ignore_matchers):
+            return grandparent
     return head
+
+
+def _normalize_ignore_patterns(values: Iterable[Any]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        s = str(raw).strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        cleaned.append(s)
+    return cleaned
 
 
 class Database:
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Provisional defaults so _connect (called inside _init_db's migration
+        # path) sees a sane matchers list. Real values load after _init_db.
+        self.ignore_patterns: list[str] = list(DEFAULT_DIRS_TO_IGNORE)
+        self._ignore_matchers: list[Callable[[str], bool]] = _compile_ignore_patterns(
+            self.ignore_patterns
+        )
         self._init_db()
+        self._reload_ignore_patterns()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        matchers = self._ignore_matchers
         conn.create_function(
-            "psf_group_path", 1, _derive_group_path, deterministic=True
+            "psf_group_path",
+            1,
+            lambda rp: _derive_group_path(rp, matchers),
+            deterministic=True,
         )
         return conn
+
+    def derive_group_path(self, relative_path: str) -> str:
+        """Service-facing helper: applies the current ignore patterns."""
+        return _derive_group_path(relative_path, self._ignore_matchers)
+
+    def _reload_ignore_patterns(self) -> None:
+        raw = self.get_setting(SETTING_DIRS_TO_IGNORE_WHEN_GROUP, "")
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if not isinstance(parsed, list):
+                    raise ValueError("expected a JSON array")
+                patterns = _normalize_ignore_patterns(parsed)
+            except (ValueError, json.JSONDecodeError) as exc:
+                log.warning(
+                    "invalid %s setting (%s); falling back to default",
+                    SETTING_DIRS_TO_IGNORE_WHEN_GROUP,
+                    exc,
+                )
+                patterns = list(DEFAULT_DIRS_TO_IGNORE)
+        else:
+            patterns = self._migrate_legacy_ignore_setting()
+        self.ignore_patterns = patterns
+        self._ignore_matchers = _compile_ignore_patterns(patterns)
+
+    def _migrate_legacy_ignore_setting(self) -> list[str]:
+        """If the older boolean ``group_skip_files_dir`` setting exists, fold
+        it into the new list-based setting and drop the legacy key. Returns the
+        chosen list for the caller to cache."""
+        legacy = self.get_setting(_LEGACY_SETTING_SKIP_FILES_DIR, "")
+        if not legacy:
+            return list(DEFAULT_DIRS_TO_IGNORE)
+        was_on = legacy.strip().lower() not in ("", "0", "false", "no")
+        patterns = list(DEFAULT_DIRS_TO_IGNORE) if was_on else []
+        self.set_setting(
+            SETTING_DIRS_TO_IGNORE_WHEN_GROUP, json.dumps(patterns, ensure_ascii=False)
+        )
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM settings WHERE key = ?",
+                (_LEGACY_SETTING_SKIP_FILES_DIR,),
+            )
+        log.info(
+            "migrated legacy %s=%r → %s=%s",
+            _LEGACY_SETTING_SKIP_FILES_DIR,
+            legacy,
+            SETTING_DIRS_TO_IGNORE_WHEN_GROUP,
+            patterns,
+        )
+        return patterns
+
+    def set_ignore_patterns(self, values: Iterable[Any]) -> list[str]:
+        cleaned = _normalize_ignore_patterns(values)
+        self.set_setting(
+            SETTING_DIRS_TO_IGNORE_WHEN_GROUP, json.dumps(cleaned, ensure_ascii=False)
+        )
+        self.ignore_patterns = cleaned
+        self._ignore_matchers = _compile_ignore_patterns(cleaned)
+        return cleaned
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

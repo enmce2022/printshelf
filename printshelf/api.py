@@ -13,6 +13,11 @@ from .service import PrintShelfService
 
 class ConfigUpdate(BaseModel):
     root_path: str = ""
+    # Optional: when present, replaces the list of folder-name patterns whose
+    # leaf is treated as transparent during group derivation. Absent means
+    # leave the existing setting alone. Patterns are plain (exact, case-
+    # insensitive), ``glob:<pat>``, or ``re:<pat>``.
+    dirs_to_ignore_when_group: list[str] | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -65,8 +70,13 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
 
     @app.post("/api/config")
     def set_config(payload: ConfigUpdate) -> dict[str, Any]:
-        root = service.set_root_path(payload.root_path)
-        return {"root_path": root}
+        service.set_root_path(payload.root_path)
+        if (
+            "dirs_to_ignore_when_group" in payload.model_fields_set
+            and payload.dirs_to_ignore_when_group is not None
+        ):
+            service.set_dirs_to_ignore_when_group(payload.dirs_to_ignore_when_group)
+        return service.get_config()
 
     @app.post("/api/scan")
     def scan_library_route() -> dict[str, Any]:

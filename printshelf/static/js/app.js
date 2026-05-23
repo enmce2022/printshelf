@@ -18,6 +18,8 @@ import {
   initScanControls,
   initialScanStatus,
   loadConfig,
+  parseIgnoreDirsInput,
+  setIgnoreDirs,
   setOnCompletedRun,
 } from "./views/scan.js";
 
@@ -86,6 +88,18 @@ async function init() {
   $("typeFilter").addEventListener("change", queueSearch);
   $("sortFilter").addEventListener("change", queueSearch);
   $("tagSearchInput").addEventListener("input", queueTagSearch);
+
+  // Save the ignore-dirs list on blur (so editing a multi-line list doesn't
+  // hammer the server) — re-fetches items afterward so groups regroup.
+  $("ignoreDirsInput").addEventListener("blur", async (event) => {
+    try {
+      const patterns = parseIgnoreDirsInput(event.target.value);
+      await setIgnoreDirs(patterns);
+      await loadItems();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  });
 
   initScanControls();
   initBrowseView();

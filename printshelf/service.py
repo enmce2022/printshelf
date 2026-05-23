@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .database import Database, _derive_group_path
+from .database import Database
 from .logging_setup import configure_logging
 from .scan_state import ScanRunStore
 from .scanner import ScanCanceledError, count_supported_files, scan_library
@@ -56,7 +56,13 @@ class PrintShelfService:
         return normalized
 
     def get_config(self) -> dict[str, Any]:
-        return {"root_path": self.get_root_path()}
+        return {
+            "root_path": self.get_root_path(),
+            "dirs_to_ignore_when_group": list(self.db.ignore_patterns),
+        }
+
+    def set_dirs_to_ignore_when_group(self, values: list[Any]) -> list[str]:
+        return self.db.set_ignore_patterns(values)
 
     def request_scan(self) -> dict[str, Any]:
         root_path = self.get_root_path()
@@ -285,7 +291,7 @@ class PrintShelfService:
 
         override = item.get("group_override")
         if override is None:
-            group_path = _derive_group_path(item.get("relative_path", ""))
+            group_path = self.db.derive_group_path(item.get("relative_path", ""))
         else:
             group_path = override
         alias_map = aliases if aliases is not None else self.db.list_group_aliases()
