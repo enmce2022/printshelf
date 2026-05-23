@@ -9,6 +9,10 @@ from typing import Any, Iterable, Iterator
 
 log = logging.getLogger("printshelf.database")
 
+# Sentinel for `update_item(group_override=...)` so callers can distinguish
+# "leave the column alone" from "explicitly clear / set to None".
+_UNSET: Any = object()
+
 # Schema baseline. Idempotent — safe to run on existing or fresh databases.
 # After this baseline, additive changes go in `_MIGRATIONS` keyed by version.
 _BASELINE_SCHEMA = """
@@ -90,7 +94,37 @@ _MIGRATIONS: list[tuple[int, str]] = [
         ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        2,
+        """
+        ALTER TABLE items ADD COLUMN group_override TEXT;
+        """,
+    ),
+    (
+        3,
+        """
+        CREATE TABLE IF NOT EXISTS group_aliases (
+            group_path TEXT PRIMARY KEY COLLATE NOCASE,
+            display_name TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        """,
+    ),
 ]
+
+
+def _derive_group_path(relative_path: str) -> str:
+    """Parent directory of a relative path, normalized to forward slashes.
+
+    Empty string when the file lives in the library root (loose / Uncategorized).
+    Used both as a SQLite function and inside the service layer — keep behaviour
+    identical to the JS-side renderer's expectation."""
+    if not relative_path:
+        return ""
+    normalized = str(relative_path).replace("\\", "/")
+    head, _, _ = normalized.rpartition("/")
+    return head
 
 
 class Database:
@@ -103,6 +137,9 @@ class Database:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.create_function(
+            "psf_group_path", 1, _derive_group_path, deterministic=True
+        )
         return conn
 
     @contextmanager
@@ -448,6 +485,7 @@ class Database:
         file_type: str = "",
         tag: str = "",
         sort: str = "date_added_desc",
+        group: str | None = None,
     ) -> list[dict[str, Any]]:
         where: list[str] = []
         params: list[Any] = []
@@ -497,6 +535,13 @@ class Database:
                 )
                 """)
             params.append(tag)
+
+        if group is not None:
+            where.append(
+                "COALESCE(i.group_override, psf_group_path(i.relative_path)) "
+                "= ? COLLATE NOCASE"
+            )
+            params.append(group)
 
         # Aggregate tags in a single query (was N+1). Tag names are joined
         # with NUL ('\x00') because that byte cannot appear in a tag (names
@@ -558,7 +603,12 @@ class Database:
             return item
 
     def update_item(
-        self, item_id: int, description: str, tags: list[str], meta: dict[str, Any]
+        self,
+        item_id: int,
+        description: str,
+        tags: list[str],
+        meta: dict[str, Any],
+        group_override: Any = _UNSET,
     ) -> dict[str, Any] | None:
         with self.transaction() as conn:
             conn.execute(
@@ -569,8 +619,97 @@ class Database:
                 """,
                 (description, json.dumps(meta, ensure_ascii=False), item_id),
             )
+            if group_override is not _UNSET:
+                conn.execute(
+                    """
+                    UPDATE items
+                    SET group_override = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (group_override, item_id),
+                )
             self._set_tags_tx(conn, item_id, tags)
         return self.get_item(item_id)
+
+    def list_group_aliases(self) -> dict[str, str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT group_path, display_name FROM group_aliases"
+            ).fetchall()
+            return {row["group_path"]: row["display_name"] for row in rows}
+
+    def set_group_alias(self, group_path: str, display_name: str) -> None:
+        normalized_path = "" if group_path is None else str(group_path)
+        normalized_display = str(display_name).strip()
+        if not normalized_display:
+            raise ValueError("Group display name cannot be empty")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO group_aliases(group_path, display_name)
+                VALUES (?, ?)
+                ON CONFLICT(group_path) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (normalized_path, normalized_display),
+            )
+
+    def delete_group_alias(self, group_path: str) -> bool:
+        normalized_path = "" if group_path is None else str(group_path)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM group_aliases WHERE group_path = ? COLLATE NOCASE",
+                (normalized_path,),
+            )
+            return cursor.rowcount > 0
+
+    def bulk_set_group_override(
+        self, item_ids: Iterable[int], group_override: str | None
+    ) -> int:
+        ids: list[int] = []
+        seen: set[int] = set()
+        for raw in item_ids:
+            try:
+                item_id = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if item_id <= 0 or item_id in seen:
+                continue
+            seen.add(item_id)
+            ids.append(item_id)
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        with self.transaction() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE items
+                SET group_override = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders})
+                """,
+                [group_override, *ids],
+            )
+            return cursor.rowcount
+
+    def list_groups(self) -> list[dict[str, Any]]:
+        """Distinct effective group paths and their item counts.
+
+        Display-name resolution (alias vs leaf name) is layered on top in the
+        service; this method only owns the SQL aggregate."""
+        sql = """
+            SELECT
+                COALESCE(i.group_override, psf_group_path(i.relative_path)) AS group_path,
+                COUNT(*) AS item_count
+            FROM items i
+            GROUP BY group_path
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql).fetchall()
+            return [
+                {"group_path": row["group_path"], "item_count": int(row["item_count"])}
+                for row in rows
+            ]
 
     def list_paths_for_root(self, root_path: str) -> list[str]:
         with self._connect() as conn:

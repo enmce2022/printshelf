@@ -142,3 +142,51 @@ def test_get_item_aggregates_tags_in_single_query(tmp_db: Database, make_item) -
 
 def test_get_item_unknown_returns_none(tmp_db: Database) -> None:
     assert tmp_db.get_item(9999) is None
+
+
+def test_filter_by_group_uses_derived_path(tmp_db: Database, make_item) -> None:
+    _seed_diverse_library(tmp_db, make_item)
+    rows = tmp_db.list_items(group="voron")
+    assert sorted(_names(rows)) == ["a-bracket.stl", "exhaust.stl"]
+
+
+def test_filter_by_group_respects_override(tmp_db: Database, make_item) -> None:
+    a, b, c, _ = _seed_diverse_library(tmp_db, make_item)
+    # Move "extra.stl" (rel path "misc/extra.stl", derived group "misc")
+    # under a manual override into the same "voron" bucket.
+    extra_id = make_item(
+        path="/lib/spare/extra2.stl",
+        relative_path="spare/extra2.stl",
+        filename="extra2.stl",
+        file_type="stl",
+    )
+    tmp_db.bulk_set_group_override([extra_id], "voron")
+
+    rows = tmp_db.list_items(group="voron")
+    assert sorted(_names(rows)) == ["a-bracket.stl", "exhaust.stl", "extra2.stl"]
+
+
+def test_filter_by_group_composes_with_query_and_tag(
+    tmp_db: Database, make_item
+) -> None:
+    _seed_diverse_library(tmp_db, make_item)
+    # Combined: group=voron AND query=exhaust AND tag=voron → exhaust.stl
+    rows = tmp_db.list_items(group="voron", query="exhaust", tag="voron")
+    assert _names(rows) == ["exhaust.stl"]
+
+
+def test_filter_by_empty_group_returns_root_items(
+    tmp_db: Database, make_item
+) -> None:
+    make_item(
+        path="/lib/loose.stl",
+        relative_path="loose.stl",
+        filename="loose.stl",
+    )
+    make_item(
+        path="/lib/under/buried.stl",
+        relative_path="under/buried.stl",
+        filename="buried.stl",
+    )
+    rows = tmp_db.list_items(group="")
+    assert _names(rows) == ["loose.stl"]

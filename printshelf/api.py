@@ -19,6 +19,9 @@ class ItemUpdate(BaseModel):
     description: str = ""
     tags: list[str] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
+    # Optional override; presence is detected via model_fields_set so callers
+    # can distinguish "leave as-is" from "explicit None / empty string".
+    group_override: str | None = None
 
 
 class TagRenameUpdate(BaseModel):
@@ -29,6 +32,16 @@ class TagBulkUpdate(BaseModel):
     item_ids: list[int] = Field(default_factory=list)
     add_tags: list[str] = Field(default_factory=list)
     remove_tags: list[str] = Field(default_factory=list)
+
+
+class GroupRenameUpdate(BaseModel):
+    group_path: str = ""
+    display_name: str | None = None
+
+
+class GroupBulkAssignUpdate(BaseModel):
+    item_ids: list[int] = Field(default_factory=list)
+    group_override: str | None = None
 
 
 def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
@@ -80,9 +93,36 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
 
     @app.get("/api/items")
     def list_items(
-        q: str = "", file_type: str = "", tag: str = "", sort: str = "date_added_desc"
+        q: str = "",
+        file_type: str = "",
+        tag: str = "",
+        sort: str = "date_added_desc",
+        group: str | None = None,
     ) -> list[dict[str, Any]]:
-        return service.list_items(query=q, file_type=file_type, tag=tag, sort=sort)
+        return service.list_items(
+            query=q, file_type=file_type, tag=tag, sort=sort, group=group
+        )
+
+    @app.get("/api/groups")
+    def list_groups() -> list[dict[str, Any]]:
+        return service.list_groups()
+
+    @app.patch("/api/groups")
+    def rename_group(payload: GroupRenameUpdate) -> dict[str, Any]:
+        if payload.display_name is None or not payload.display_name.strip():
+            return service.reset_group_display(payload.group_path)
+        try:
+            return service.rename_group(
+                group_path=payload.group_path, display_name=payload.display_name
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/items/bulk-group")
+    def bulk_assign_group(payload: GroupBulkAssignUpdate) -> dict[str, Any]:
+        return service.bulk_assign_group(
+            item_ids=payload.item_ids, group_override=payload.group_override
+        )
 
     @app.get("/api/tags")
     def list_tags(q: str = "") -> list[dict[str, Any]]:
@@ -122,12 +162,15 @@ def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
 
     @app.put("/api/items/{item_id}")
     def update_item(item_id: int, payload: ItemUpdate) -> dict[str, Any]:
-        item = service.update_item(
-            item_id=item_id,
-            description=payload.description,
-            tags=payload.tags,
-            meta=payload.meta,
-        )
+        kwargs: dict[str, Any] = {
+            "item_id": item_id,
+            "description": payload.description,
+            "tags": payload.tags,
+            "meta": payload.meta,
+        }
+        if "group_override" in payload.model_fields_set:
+            kwargs["group_override"] = payload.group_override
+        item = service.update_item(**kwargs)
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
         return item

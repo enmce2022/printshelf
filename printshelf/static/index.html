@@ -79,6 +79,14 @@
         <section id="browseView" class="content-view browse-view" role="tabpanel"
                  aria-labelledby="viewBrowseButton">
           <section class="catalog">
+            <div class="catalog-toolbar">
+              <div class="row">
+                <button id="expandAllGroupsButton" class="button secondary" type="button">Expand all</button>
+                <button id="collapseAllGroupsButton" class="button secondary" type="button">Collapse all</button>
+              </div>
+              <button id="selectionModeToggle" class="button secondary chip-toggle"
+                      type="button" aria-pressed="false">Select items</button>
+            </div>
             <div id="catalogGrid" class="catalog-grid" role="listbox"
                  aria-label="Library items"></div>
             <div id="emptyState" class="empty-state hidden">
@@ -86,6 +94,15 @@
               <p>Select a library folder and run a scan. The catalog will appear here.</p>
             </div>
           </section>
+
+          <div id="bulkGroupBar" class="bulk-action-bar hidden" role="region"
+               aria-label="Bulk group actions">
+            <span id="bulkSelectionCount" class="muted">0 selected</span>
+            <div class="row">
+              <button id="bulkMoveButton" class="button primary" type="button">Move to group…</button>
+              <button id="bulkClearButton" class="button secondary" type="button">Clear</button>
+            </div>
+          </div>
 
           <section class="detail panel">
             <div id="detailEmpty" class="detail-empty">
@@ -121,6 +138,15 @@
               <div class="field">
                 <span>Tags</span>
                 <div id="tagsInputHost" class="tag-input-host"></div>
+              </div>
+
+              <div class="field">
+                <span>Group</span>
+                <div class="group-field-row">
+                  <span id="detailGroupName" class="group-name">Uncategorized</span>
+                  <span id="detailGroupPath" class="muted breadcrumb"></span>
+                  <button id="changeGroupButton" class="button secondary" type="button">Change…</button>
+                </div>
               </div>
 
               <label class="field">

@@ -19,6 +19,9 @@ export const state = {
   saveInFlight: false,
   scanInFlight: false,
   bulkInFlight: false,
+  groups: [],
+  selectionMode: false,
+  selectedItemIds: new Set(),
 };
 
 export const ACTIVE_SCAN_STATUSES = new Set([

@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .database import Database
+from .database import Database, _derive_group_path
 from .logging_setup import configure_logging
 from .scan_state import ScanRunStore
 from .scanner import ScanCanceledError, count_supported_files, scan_library
@@ -16,7 +16,21 @@ from .scanner import ScanCanceledError, count_supported_files, scan_library
 ACTIVE_SCAN_STATUSES = {"counting", "running", "canceling", "paused"}
 PAUSE_POLL_SECONDS = 0.5
 
+# Sentinel matching Database._UNSET so the API layer can pass it through.
+_UNSET: Any = object()
+
 log = logging.getLogger("printshelf.service")
+
+
+def _group_display_for(group_path: str, aliases: dict[str, str]) -> str | None:
+    """Resolve a group's display name: alias if present, else folder leaf,
+    or None for the library-root bucket (UI renders "Uncategorized")."""
+    if group_path in aliases:
+        return aliases[group_path]
+    if not group_path:
+        return None
+    _, _, leaf = group_path.rpartition("/")
+    return leaf or group_path
 
 
 class PrintShelfService:
@@ -243,7 +257,11 @@ class PrintShelfService:
         )
         self.scan_store.complete_run(run_id, result, completed_message)
 
-    def _serialize_item(self, item: dict[str, Any]) -> dict[str, Any]:
+    def _serialize_item(
+        self,
+        item: dict[str, Any],
+        aliases: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         preview_rel_path = item.get("preview_rel_path")
         preview_url = f"/previews/{preview_rel_path}" if preview_rel_path else None
 
@@ -265,6 +283,13 @@ class PrintShelfService:
             )
             indexed_meta = {}
 
+        override = item.get("group_override")
+        if override is None:
+            group_path = _derive_group_path(item.get("relative_path", ""))
+        else:
+            group_path = override
+        alias_map = aliases if aliases is not None else self.db.list_group_aliases()
+
         return {
             "id": item["id"],
             "path": item["path"],
@@ -280,6 +305,9 @@ class PrintShelfService:
             "tags": item.get("tags", []),
             "meta": user_meta,
             "indexed_meta": indexed_meta,
+            "group_path": group_path,
+            "group_display": _group_display_for(group_path, alias_map),
+            "group_override": override,
         }
 
     def list_items(
@@ -288,9 +316,13 @@ class PrintShelfService:
         file_type: str = "",
         tag: str = "",
         sort: str = "date_added_desc",
+        group: str | None = None,
     ) -> list[dict[str, Any]]:
-        rows = self.db.list_items(query=query, file_type=file_type, tag=tag, sort=sort)
-        return [self._serialize_item(row) for row in rows]
+        rows = self.db.list_items(
+            query=query, file_type=file_type, tag=tag, sort=sort, group=group
+        )
+        aliases = self.db.list_group_aliases()
+        return [self._serialize_item(row, aliases) for row in rows]
 
     def list_tags(self, query: str = "") -> list[dict[str, Any]]:
         return self.db.list_tags(query=query)
@@ -319,9 +351,69 @@ class PrintShelfService:
         return self._serialize_item(row) if row else None
 
     def update_item(
-        self, item_id: int, description: str, tags: list[str], meta: dict[str, Any]
+        self,
+        item_id: int,
+        description: str,
+        tags: list[str],
+        meta: dict[str, Any],
+        group_override: Any = _UNSET,
     ) -> dict[str, Any] | None:
-        updated = self.db.update_item(
-            item_id=item_id, description=description, tags=tags, meta=meta
-        )
+        kwargs: dict[str, Any] = {
+            "item_id": item_id,
+            "description": description,
+            "tags": tags,
+            "meta": meta,
+        }
+        if group_override is not _UNSET:
+            kwargs["group_override"] = group_override
+        updated = self.db.update_item(**kwargs)
         return self._serialize_item(updated) if updated else None
+
+    def list_groups(self) -> list[dict[str, Any]]:
+        rows = self.db.list_groups()
+        aliases = self.db.list_group_aliases()
+        groups = [
+            {
+                "group_path": row["group_path"],
+                "display_name": _group_display_for(row["group_path"], aliases),
+                "has_alias": row["group_path"] in aliases,
+                "item_count": row["item_count"],
+            }
+            for row in rows
+        ]
+        # Pin the library-root bucket ("") to the end; sort the rest by display
+        # name (None never gets sorted because the root bucket is filtered out).
+        groups.sort(
+            key=lambda g: (
+                g["group_path"] == "",
+                (g["display_name"] or "").casefold(),
+                g["group_path"].casefold(),
+            )
+        )
+        return groups
+
+    def rename_group(self, group_path: str, display_name: str) -> dict[str, Any]:
+        normalized = (display_name or "").strip()
+        if not normalized:
+            raise ValueError("Group display name cannot be empty")
+        self.db.set_group_alias(group_path, normalized)
+        return {
+            "group_path": group_path,
+            "display_name": normalized,
+            "has_alias": True,
+        }
+
+    def reset_group_display(self, group_path: str) -> dict[str, Any]:
+        self.db.delete_group_alias(group_path)
+        aliases = self.db.list_group_aliases()
+        return {
+            "group_path": group_path,
+            "display_name": _group_display_for(group_path, aliases),
+            "has_alias": False,
+        }
+
+    def bulk_assign_group(
+        self, item_ids: list[int], group_override: str | None
+    ) -> dict[str, Any]:
+        updated = self.db.bulk_set_group_override(item_ids, group_override)
+        return {"updated": updated}
