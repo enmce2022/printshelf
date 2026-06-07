@@ -184,6 +184,35 @@ function lookupGroupMeta(groupPath) {
   return state.groups.find((g) => g.group_path === groupPath) || null;
 }
 
+function groupSortName(groupPath) {
+  const meta = lookupGroupMeta(groupPath);
+  return (
+    (meta && meta.display_name) ||
+    groupPath.split("/").filter(Boolean).pop() ||
+    groupPath
+  ).toLowerCase();
+}
+
+// Decide the order of group sections so it tracks the active Sort selection.
+// For name sorts we order groups by display name (honoring direction); for
+// date sorts we keep the server-provided order, which `buildGroupBuckets`
+// preserves as first-seen insertion order and already reflects the sort.
+// The library-root bucket ("", "Uncategorized") is always pinned to the end.
+function orderGroupKeys(buckets) {
+  const sort = $("sortFilter").value || "date_added_desc";
+  const keys = Array.from(buckets.keys());
+  const hasRoot = keys.includes("");
+  const ordered = keys.filter((k) => k !== "");
+
+  if (sort === "name_asc" || sort === "name_desc") {
+    const dir = sort === "name_desc" ? -1 : 1;
+    ordered.sort((a, b) => dir * groupSortName(a).localeCompare(groupSortName(b)));
+  }
+
+  if (hasRoot) ordered.push("");
+  return ordered;
+}
+
 function renderGroupSection(groupPath, items, collapseMap) {
   const meta = lookupGroupMeta(groupPath);
   const displayName =
@@ -250,24 +279,7 @@ function renderCatalog() {
   empty.classList.add("hidden");
 
   const buckets = buildGroupBuckets(state.items);
-  const orderedKeys = Array.from(buckets.keys()).sort((a, b) => {
-    if (a === b) return 0;
-    if (a === "") return 1;
-    if (b === "") return -1;
-    const metaA = lookupGroupMeta(a);
-    const metaB = lookupGroupMeta(b);
-    const nameA = (
-      (metaA && metaA.display_name) ||
-      a.split("/").pop() ||
-      a
-    ).toLowerCase();
-    const nameB = (
-      (metaB && metaB.display_name) ||
-      b.split("/").pop() ||
-      b
-    ).toLowerCase();
-    return nameA.localeCompare(nameB);
-  });
+  const orderedKeys = orderGroupKeys(buckets);
 
   const collapseMap = loadCollapseMap();
   const fragment = document.createDocumentFragment();
