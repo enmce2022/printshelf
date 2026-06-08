@@ -42,6 +42,29 @@ uv run python run.py         # launch the desktop app
 
 `uv.lock` is committed, so `uv sync` produces an identical environment on every machine. The optional `--extra dev` pulls in formatter/linter/test tooling (`black`, `isort`, `ruff`, `pytest`).
 
+### Desktop shortcut (Windows)
+
+To launch PrintShelf with a double-click instead of a terminal, run the installer script once after `uv sync`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\Install-Shortcut.ps1
+```
+
+This drops a **PrintShelf** shortcut on your Desktop. Because the project venv exists, the shortcut targets `.venv\Scripts\python.exe`, so it launches without needing `uv` on PATH. A small console window opens alongside the app — that's expected (pywebview's window doesn't reliably appear when launched windowless via `pythonw.exe`); closing the console quits the app. Useful options:
+
+```powershell
+# also add it to the Start Menu
+powershell -File scripts\Install-Shortcut.ps1 -StartMenu
+
+# pin the shortcut to a fixed data directory
+powershell -File scripts\Install-Shortcut.ps1 -DataDir D:\printshelf-library
+
+# remove the shortcut(s)
+powershell -File scripts\Install-Shortcut.ps1 -Uninstall
+```
+
+If there's no `.venv` yet, the script falls back to `uv run python run.py`; run `uv sync --extra dev` first to target the venv directly.
+
 ### Worker concurrency
 
 PrintShelf starts Uvicorn with a single worker by default. Pass `--workers N` to spawn N worker processes:
