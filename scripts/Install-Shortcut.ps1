@@ -5,9 +5,13 @@
 .DESCRIPTION
     Builds a .lnk on the Desktop (and optionally the Start Menu) that starts the
     PrintShelf desktop app. When the project's virtualenv exists the shortcut
-    targets .venv\Scripts\pythonw.exe directly, so the app opens with no console
-    window and without needing `uv` on PATH. If there is no venv, it falls back
-    to `uv run pythonw run.py`.
+    targets .venv\Scripts\python.exe directly, so it launches without needing
+    `uv` on PATH. If there is no venv, it falls back to `uv run python run.py`.
+
+    Note: a small console window opens alongside the app window. That is
+    intentional - PrintShelf's pywebview (WinForms) window does not reliably
+    appear when launched without a console (pythonw.exe), so we use python.exe.
+    Closing the console window quits the app.
 
 .PARAMETER Name
     Shortcut file name (without extension). Default: "PrintShelf".
@@ -69,19 +73,21 @@ if (-not (Test-Path $RunScript)) {
     throw "Could not find run.py at $RunScript - is this the PrintShelf project?"
 }
 
-# Prefer the project venv's pythonw.exe: launches windowless, no uv on PATH.
-$venvPythonw = Join-Path $ProjectRoot ".venv\Scripts\pythonw.exe"
-if (Test-Path $venvPythonw) {
-    $exe = $venvPythonw
+# Prefer the project venv's python.exe: no need for uv on PATH. We use
+# python.exe (not pythonw.exe) because the pywebview WinForms window does not
+# reliably show when launched windowless - a console window comes along.
+$venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+if (Test-Path $venvPython) {
+    $exe = $venvPython
     $argLine = "`"$RunScript`""
 } else {
     $uv = (Get-Command uv -ErrorAction SilentlyContinue).Source
     if (-not $uv) {
         throw "No .venv found and 'uv' is not on PATH. Run 'uv sync --extra dev' first."
     }
-    Write-Warning "No .venv found - falling back to 'uv run'. A console window may flash on launch. Run 'uv sync --extra dev' for a windowless shortcut."
+    Write-Warning "No .venv found - falling back to 'uv run python run.py'. Run 'uv sync --extra dev' to target the venv directly."
     $exe = $uv
-    $argLine = "run pythonw `"$RunScript`""
+    $argLine = "run python `"$RunScript`""
 }
 
 if ($DataDir) {

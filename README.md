@@ -50,7 +50,7 @@ To launch PrintShelf with a double-click instead of a terminal, run the installe
 powershell -ExecutionPolicy Bypass -File scripts\Install-Shortcut.ps1
 ```
 
-This drops a **PrintShelf** shortcut on your Desktop. Because the project venv exists, the shortcut targets `.venv\Scripts\pythonw.exe`, so the app opens windowless — no console flash and no need for `uv` on PATH. Useful options:
+This drops a **PrintShelf** shortcut on your Desktop. Because the project venv exists, the shortcut targets `.venv\Scripts\python.exe`, so it launches without needing `uv` on PATH. A small console window opens alongside the app — that's expected (pywebview's window doesn't reliably appear when launched windowless via `pythonw.exe`); closing the console quits the app. Useful options:
 
 ```powershell
 # also add it to the Start Menu
@@ -63,7 +63,7 @@ powershell -File scripts\Install-Shortcut.ps1 -DataDir D:\printshelf-library
 powershell -File scripts\Install-Shortcut.ps1 -Uninstall
 ```
 
-If there's no `.venv` yet, the script falls back to `uv run pythonw run.py` (a console window may flash); run `uv sync --extra dev` first for the clean windowless launch.
+If there's no `.venv` yet, the script falls back to `uv run python run.py`; run `uv sync --extra dev` first to target the venv directly.
 
 ### Worker concurrency
 
