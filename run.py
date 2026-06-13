@@ -1,7 +1,21 @@
 import argparse
 import multiprocessing
+import os
+import sys
 
 from printshelf.desktop import resolve_data_dir, run_desktop_app
+
+# PyInstaller windowed (console=False) builds run with sys.stdout/stderr set to
+# None. uvicorn's logging formatter calls sys.stdout.isatty() during startup,
+# which raises AttributeError on None and crashes before the server can bind —
+# breaking every launch that has no attached console (i.e. a double-click).
+# Route the missing streams to the null device so logging (and any stray print)
+# is harmless. This runs at import time, so spawned worker children that
+# re-execute this module are covered too. Running from a real console leaves the
+# streams untouched.
+for _stream_name in ("stdout", "stderr"):
+    if getattr(sys, _stream_name) is None:
+        setattr(sys, _stream_name, open(os.devnull, "w"))
 
 
 def main() -> None:
