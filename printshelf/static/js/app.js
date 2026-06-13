@@ -5,6 +5,7 @@ import {
   initBrowseView,
   loadItems,
   refreshTagSuggestions,
+  renderCatalog,
   setTagsLoadCallback,
 } from "./views/browse.js";
 import {
@@ -87,6 +88,9 @@ async function init() {
   $("searchInput").addEventListener("input", queueSearch);
   $("typeFilter").addEventListener("change", queueSearch);
   $("sortFilter").addEventListener("change", queueSearch);
+  // Within-group sort is a pure client-side re-sort of already-loaded items —
+  // re-render only, no server round-trip.
+  $("groupSortFilter").addEventListener("change", () => renderCatalog());
   $("tagSearchInput").addEventListener("input", queueTagSearch);
 
   // Save the ignore-dirs list on blur (so editing a multi-line list doesn't
