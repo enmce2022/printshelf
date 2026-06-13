@@ -39,10 +39,20 @@ uv @pyiArgs
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 $exe = Join-Path $repoRoot "dist\PrintShelf\PrintShelf.exe"
-if (Test-Path $exe) {
-    $size = (Get-ChildItem (Join-Path $repoRoot "dist\PrintShelf") -Recurse | Measure-Object Length -Sum).Sum / 1MB
-    Write-Host ("Done. Bundle: {0} ({1:N0} MB total)" -f $exe, $size) -ForegroundColor Green
-    Write-Host "Run it by double-clicking the .exe, or distribute the dist\PrintShelf folder." -ForegroundColor Green
-} else {
+if (-not (Test-Path $exe)) {
     throw "Build reported success but $exe is missing"
 }
+
+$size = (Get-ChildItem (Join-Path $repoRoot "dist\PrintShelf") -Recurse | Measure-Object Length -Sum).Sum / 1MB
+
+# Clean up PyInstaller's intermediate work tree — it's pure scratch (~56 MB);
+# the dist\PrintShelf bundle is the only artifact worth keeping. Only done once
+# the exe is confirmed present, so a failed build leaves build\ for debugging.
+$buildDir = Join-Path $repoRoot "build"
+if (Test-Path $buildDir) {
+    Remove-Item $buildDir -Recurse -Force
+    Write-Host "Cleaned up intermediate build\ directory." -ForegroundColor DarkGray
+}
+
+Write-Host ("Done. Bundle: {0} ({1:N0} MB total)" -f $exe, $size) -ForegroundColor Green
+Write-Host "Run it by double-clicking the .exe, or distribute the dist\PrintShelf folder." -ForegroundColor Green
