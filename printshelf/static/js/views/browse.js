@@ -180,6 +180,34 @@ function buildGroupBuckets(items) {
   return buckets;
 }
 
+// Comparators for ordering items *within* a group, independent of the main
+// Sort (which orders the group sections). All fall back to filename so ties
+// are stable; created_at sorts as ISO strings, size_bytes numerically.
+const byName = (a, b) =>
+  (a.filename || "").localeCompare(b.filename || "", undefined, {
+    sensitivity: "base",
+  });
+const ITEM_COMPARATORS = {
+  name_asc: byName,
+  name_desc: (a, b) => byName(b, a),
+  date_added_desc: (a, b) =>
+    String(b.created_at).localeCompare(String(a.created_at)) || byName(a, b),
+  date_added_asc: (a, b) =>
+    String(a.created_at).localeCompare(String(b.created_at)) || byName(a, b),
+  size_desc: (a, b) => b.size_bytes - a.size_bytes || byName(a, b),
+  size_asc: (a, b) => a.size_bytes - b.size_bytes || byName(a, b),
+  type_asc: (a, b) =>
+    (a.file_type || "").localeCompare(b.file_type || "") || byName(a, b),
+};
+
+// Re-sort a bucket's items per the "Within group" selection. Returns the array
+// unchanged for "default" (items keep the server order set by the main Sort).
+function sortItemsWithinGroup(items) {
+  const choice = $("groupSortFilter")?.value || "default";
+  const comparator = ITEM_COMPARATORS[choice];
+  return comparator ? items.slice().sort(comparator) : items;
+}
+
 function lookupGroupMeta(groupPath) {
   return state.groups.find((g) => g.group_path === groupPath) || null;
 }
@@ -264,7 +292,7 @@ function renderGroupSection(groupPath, items, collapseMap) {
   return details;
 }
 
-function renderCatalog() {
+export function renderCatalog() {
   const grid = $("catalogGrid");
   const empty = $("emptyState");
   grid.innerHTML = "";
@@ -284,7 +312,8 @@ function renderCatalog() {
   const collapseMap = loadCollapseMap();
   const fragment = document.createDocumentFragment();
   for (const key of orderedKeys) {
-    fragment.appendChild(renderGroupSection(key, buckets.get(key), collapseMap));
+    const sortedItems = sortItemsWithinGroup(buckets.get(key));
+    fragment.appendChild(renderGroupSection(key, sortedItems, collapseMap));
   }
   grid.appendChild(fragment);
 }

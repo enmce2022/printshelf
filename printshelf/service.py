@@ -305,6 +305,7 @@ class PrintShelfService:
             "file_type": item["file_type"],
             "size_bytes": item["size_bytes"],
             "modified_at": item["modified_at"],
+            "created_at": item["created_at"],
             "preview_url": preview_url,
             "preview_source": item.get("preview_source"),
             "description": item.get("description", ""),
