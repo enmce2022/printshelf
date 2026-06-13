@@ -65,6 +65,20 @@ powershell -File scripts\Install-Shortcut.ps1 -Uninstall
 
 If there's no `.venv` yet, the script falls back to `uv run python run.py`; run `uv sync --extra dev` first to target the venv directly.
 
+### Standalone .exe (Windows)
+
+To build a self-contained executable that runs without Python, uv, or any installed dependencies, package it with PyInstaller:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\Build-Exe.ps1
+```
+
+This produces `dist\PrintShelf\PrintShelf.exe`. Double-click it to run, or copy the whole `dist\PrintShelf` folder to another Windows machine — no Python required. The bundle is large (~400 MB) because it embeds VTK, the offscreen renderer behind STL/G-code previews.
+
+The build is **onedir** (a folder with the `.exe` inside), not a single loose file, on purpose: PrintShelf spawns child processes for parallel scans, and a onefile build would re-extract the whole VTK payload to a temp directory on every spawn. The folder layout shares one unpacked copy and starts faster. The spec lives at [`printshelf.spec`](printshelf.spec); pass `-Clean` to the script for a fully fresh build.
+
+Like the shortcut, the `.exe` keeps its runtime data in `./printshelf-data/` next to wherever it's launched from. Set `PRINTSHELF_DATA_DIR` to pin a fixed library location.
+
 ### Worker concurrency
 
 PrintShelf starts Uvicorn with a single worker by default. Pass `--workers N` to spawn N worker processes:

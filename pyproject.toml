@@ -25,6 +25,7 @@ dev = [
   "isort>=8.0.1",
   "ruff>=0.15.6",
   "pytest>=9.0",
+  "pyinstaller>=6.20.0",
 ]
 
 [tool.setuptools.packages.find]
