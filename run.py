@@ -1,4 +1,5 @@
 import argparse
+import multiprocessing
 
 from printshelf.desktop import resolve_data_dir, run_desktop_app
 
@@ -53,4 +54,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Required for the frozen (PyInstaller) build: child processes spawned by
+    # the scan ProcessPoolExecutor and uvicorn's Multiprocess supervisor re-run
+    # this executable, and freeze_support() short-circuits them into worker mode
+    # instead of re-opening the desktop window. Harmless when running from
+    # source.
+    multiprocessing.freeze_support()
     main()
