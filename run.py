@@ -3,7 +3,7 @@ import multiprocessing
 import os
 import sys
 
-from printshelf.desktop import resolve_data_dir, run_desktop_app
+from spoolhouse.desktop import resolve_data_dir, run_desktop_app
 
 # PyInstaller windowed (console=False) builds run with sys.stdout/stderr set to
 # None. uvicorn's logging formatter calls sys.stdout.isatty() during startup,
@@ -20,7 +20,7 @@ for _stream_name in ("stdout", "stderr"):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="printshelf",
+        prog="spoolhouse",
         description="Browse a library of STL and G-code files.",
     )
     parser.add_argument(
@@ -28,9 +28,9 @@ def main() -> None:
         metavar="PATH",
         default=None,
         help=(
-            "Where to keep PrintShelf's SQLite database, preview cache, and "
-            "log file. Defaults to ./printshelf-data in the current working "
-            "directory. Can also be set via PRINTSHELF_DATA_DIR."
+            "Where to keep SpoolHouse's SQLite database, preview cache, and "
+            "log file. Defaults to ./spoolhouse-data in the current working "
+            "directory. Can also be set via SPOOLHOUSE_DATA_DIR."
         ),
     )
     parser.add_argument(
@@ -49,7 +49,7 @@ def main() -> None:
             "Parallelism for preview generation during library scans (default: "
             "1 = sequential). Higher values use a process pool to render STL "
             "and G-code thumbnails on multiple CPU cores. Can also be set via "
-            "PRINTSHELF_SCAN_WORKERS."
+            "SPOOLHOUSE_SCAN_WORKERS."
         ),
     )
     args = parser.parse_args()

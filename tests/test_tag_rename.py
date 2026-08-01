@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from printshelf.database import Database
+from spoolhouse.database import Database
 
 
 def _tag_id(db: Database, name: str) -> int:

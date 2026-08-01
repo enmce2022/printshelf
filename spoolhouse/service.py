@@ -19,7 +19,7 @@ PAUSE_POLL_SECONDS = 0.5
 # Sentinel matching Database._UNSET so the API layer can pass it through.
 _UNSET: Any = object()
 
-log = logging.getLogger("printshelf.service")
+log = logging.getLogger("spoolhouse.service")
 
 
 def _group_display_for(group_path: str, aliases: dict[str, str]) -> str | None:
@@ -33,14 +33,14 @@ def _group_display_for(group_path: str, aliases: dict[str, str]) -> str | None:
     return leaf or group_path
 
 
-class PrintShelfService:
+class SpoolHouseService:
     def __init__(self, data_dir: Path, *, scan_workers: int = 1) -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         configure_logging(self.data_dir)
         self.preview_dir = self.data_dir / "previews"
         self.preview_dir.mkdir(parents=True, exist_ok=True)
-        self.db = Database(self.data_dir / "printshelf.sqlite3")
+        self.db = Database(self.data_dir / "spoolhouse.sqlite3")
         self.scan_store = ScanRunStore(self.db)
         self.scan_workers = max(1, int(scan_workers))
         self._scan_thread_lock = threading.Lock()
@@ -103,7 +103,7 @@ class PrintShelfService:
                 return
             self._scan_thread = threading.Thread(
                 target=self._scan_worker_loop,
-                name="printshelf-scan-worker",
+                name="spoolhouse-scan-worker",
                 daemon=True,
             )
             self._scan_thread.start()

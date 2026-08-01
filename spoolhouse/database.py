@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
-log = logging.getLogger("printshelf.database")
+log = logging.getLogger("spoolhouse.database")
 
 # Sentinel for `update_item(group_override=...)` so callers can distinguish
 # "leave the column alone" from "explicitly clear / set to None".

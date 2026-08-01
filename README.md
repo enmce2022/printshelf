@@ -1,8 +1,8 @@
-# PrintShelf
+# SpoolHouse
 
 A simple Python desktop app for browsing a library of `.stl` and `.gcode` files.
 
-![PrintShelf browsing a library of STL files with previews and a detail pane](docs/images/app_preview.png)
+![SpoolHouse browsing a library of STL files with previews and a detail pane](docs/images/app_preview.png)
 
 ## What it does
 
@@ -33,7 +33,7 @@ PrusaSlicer can emit both PNG and QOI thumbnails in modern G-code. This starter 
 
 ## Run it
 
-PrintShelf uses [uv](https://docs.astral.sh/uv/) for environment and dependency management. Install uv first, then:
+SpoolHouse uses [uv](https://docs.astral.sh/uv/) for environment and dependency management. Install uv first, then:
 
 ```
 uv sync --extra dev          # creates .venv and installs runtime + dev tooling
@@ -44,20 +44,20 @@ uv run python run.py         # launch the desktop app
 
 ### Desktop shortcut (Windows)
 
-To launch PrintShelf with a double-click instead of a terminal, run the installer script once after `uv sync`:
+To launch SpoolHouse with a double-click instead of a terminal, run the installer script once after `uv sync`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\Install-Shortcut.ps1
 ```
 
-This drops a **PrintShelf** shortcut on your Desktop. Because the project venv exists, the shortcut targets `.venv\Scripts\python.exe`, so it launches without needing `uv` on PATH. A small console window opens alongside the app — that's expected (pywebview's window doesn't reliably appear when launched windowless via `pythonw.exe`); closing the console quits the app. Useful options:
+This drops a **SpoolHouse** shortcut on your Desktop. Because the project venv exists, the shortcut targets `.venv\Scripts\python.exe`, so it launches without needing `uv` on PATH. A small console window opens alongside the app — that's expected (pywebview's window doesn't reliably appear when launched windowless via `pythonw.exe`); closing the console quits the app. Useful options:
 
 ```powershell
 # also add it to the Start Menu
 powershell -File scripts\Install-Shortcut.ps1 -StartMenu
 
 # pin the shortcut to a fixed data directory
-powershell -File scripts\Install-Shortcut.ps1 -DataDir D:\printshelf-library
+powershell -File scripts\Install-Shortcut.ps1 -DataDir D:\spoolhouse-library
 
 # remove the shortcut(s)
 powershell -File scripts\Install-Shortcut.ps1 -Uninstall
@@ -73,15 +73,15 @@ To build a self-contained executable that runs without Python, uv, or any instal
 powershell -ExecutionPolicy Bypass -File scripts\Build-Exe.ps1
 ```
 
-This produces `dist\PrintShelf\PrintShelf.exe`. Double-click it to run, or copy the whole `dist\PrintShelf` folder to another Windows machine — no Python required. The bundle is large (~400 MB) because it embeds VTK, the offscreen renderer behind STL/G-code previews.
+This produces `dist\SpoolHouse\SpoolHouse.exe`. Double-click it to run, or copy the whole `dist\SpoolHouse` folder to another Windows machine — no Python required. The bundle is large (~400 MB) because it embeds VTK, the offscreen renderer behind STL/G-code previews.
 
-The build is **onedir** (a folder with the `.exe` inside), not a single loose file, on purpose: PrintShelf spawns child processes for parallel scans, and a onefile build would re-extract the whole VTK payload to a temp directory on every spawn. The folder layout shares one unpacked copy and starts faster. The spec lives at [`printshelf.spec`](printshelf.spec); pass `-Clean` to the script for a fully fresh build.
+The build is **onedir** (a folder with the `.exe` inside), not a single loose file, on purpose: SpoolHouse spawns child processes for parallel scans, and a onefile build would re-extract the whole VTK payload to a temp directory on every spawn. The folder layout shares one unpacked copy and starts faster. The spec lives at [`spoolhouse.spec`](spoolhouse.spec); pass `-Clean` to the script for a fully fresh build.
 
-Like the shortcut, the `.exe` keeps its runtime data in `./printshelf-data/` next to wherever it's launched from. Set `PRINTSHELF_DATA_DIR` to pin a fixed library location.
+Like the shortcut, the `.exe` keeps its runtime data in `./spoolhouse-data/` next to wherever it's launched from. Set `SPOOLHOUSE_DATA_DIR` to pin a fixed library location.
 
 ### Worker concurrency
 
-PrintShelf starts Uvicorn with a single worker by default. Pass `--workers N` to spawn N worker processes:
+SpoolHouse starts Uvicorn with a single worker by default. Pass `--workers N` to spawn N worker processes:
 
 ```
 uv run python run.py --workers 2
@@ -97,42 +97,42 @@ Preview generation (STL mesh + G-code toolpath rendering) is the dominant cost d
 uv run python run.py --scan-workers 7
 ```
 
-`--scan-workers` defaults to `1` (sequential, current behavior). Set it to roughly `cpu_count - 1` for the fastest scans; each worker holds a VTK render context plus a trimesh state in memory (~150 MB), so a 16-core box at `--scan-workers 15` will use a few GB during a scan. The flag is independent of `--workers` (HTTP). Can also be set via `PRINTSHELF_SCAN_WORKERS`.
+`--scan-workers` defaults to `1` (sequential, current behavior). Set it to roughly `cpu_count - 1` for the fastest scans; each worker holds a VTK render context plus a trimesh state in memory (~150 MB), so a 16-core box at `--scan-workers 15` will use a few GB during a scan. The flag is independent of `--workers` (HTTP). Can also be set via `SPOOLHOUSE_SCAN_WORKERS`.
 
 Cancel and pause continue to work: cancellation drops pending work and lets in-flight files finish; pause stops dispatching new work until you resume.
 
 ## Data location and reset
 
-PrintShelf is portable: it keeps all of its local data in a single folder
+SpoolHouse is portable: it keeps all of its local data in a single folder
 next to where you run it. Nothing is written to your home directory.
 
 Default layout (relative to the current working directory at launch):
 
-- Base data directory: `./printshelf-data/`
-- SQLite database: `./printshelf-data/printshelf.sqlite3`
-- Preview cache: `./printshelf-data/previews/`
-- Log file: `./printshelf-data/printshelf.log`
+- Base data directory: `./spoolhouse-data/`
+- SQLite database: `./spoolhouse-data/spoolhouse.sqlite3`
+- Preview cache: `./spoolhouse-data/previews/`
+- Log file: `./spoolhouse-data/spoolhouse.log`
 
-To use a different location, pass `--data-dir` or set the `PRINTSHELF_DATA_DIR`
+To use a different location, pass `--data-dir` or set the `SPOOLHOUSE_DATA_DIR`
 environment variable. The CLI flag takes precedence over the env var.
 
 ```powershell
 # Windows PowerShell
-uv run python run.py --data-dir D:\printshelf-library
-$env:PRINTSHELF_DATA_DIR = "D:\printshelf-library"; uv run python run.py
+uv run python run.py --data-dir D:\spoolhouse-library
+$env:SPOOLHOUSE_DATA_DIR = "D:\spoolhouse-library"; uv run python run.py
 ```
 
 ```bash
 # macOS/Linux
-uv run python run.py --data-dir ~/printshelf-library
-PRINTSHELF_DATA_DIR=~/printshelf-library uv run python run.py
+uv run python run.py --data-dir ~/spoolhouse-library
+SPOOLHOUSE_DATA_DIR=~/spoolhouse-library uv run python run.py
 ```
 
 ### Reset
 
 Close the app first, then:
 
-- **Soft reset**: delete `printshelf.sqlite3` from your data directory
+- **Soft reset**: delete `spoolhouse.sqlite3` from your data directory
   (keeps the preview cache).
 - **Full reset**: delete the whole data directory.
 
@@ -142,15 +142,15 @@ launched with the default layout from the repo root, soft reset is:
 
 ```powershell
 # Windows PowerShell
-Remove-Item .\printshelf-data\printshelf.sqlite3 -Force
+Remove-Item .\spoolhouse-data\spoolhouse.sqlite3 -Force
 ```
 
 ```bash
 # macOS/Linux
-rm -f ./printshelf-data/printshelf.sqlite3
+rm -f ./spoolhouse-data/spoolhouse.sqlite3
 ```
 
-For a full reset, remove the whole `printshelf-data` folder.
+For a full reset, remove the whole `spoolhouse-data` folder.
 
 If pywebview is unavailable on your platform, the app will still start the local server and open the UI in a browser.
 

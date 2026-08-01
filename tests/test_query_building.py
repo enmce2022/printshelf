@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from printshelf.database import Database
+from spoolhouse.database import Database
 
 
 def _names(rows: list[dict]) -> list[str]:

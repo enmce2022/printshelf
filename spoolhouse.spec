@@ -1,9 +1,9 @@
-# PyInstaller spec for PrintShelf — Windows .exe packaging.
+# PyInstaller spec for SpoolHouse — Windows .exe packaging.
 #
-# Build with:   uv run pyinstaller printshelf.spec --noconfirm
-# Output:       dist/PrintShelf/PrintShelf.exe   (onedir bundle)
+# Build with:   uv run pyinstaller spoolhouse.spec --noconfirm
+# Output:       dist/SpoolHouse/SpoolHouse.exe   (onedir bundle)
 #
-# Onedir (not onefile) is deliberate: PrintShelf spawns child processes
+# Onedir (not onefile) is deliberate: SpoolHouse spawns child processes
 # (scan ProcessPoolExecutor, optional uvicorn Multiprocess) that re-launch the
 # executable. Onefile would re-extract the whole VTK payload to a temp dir on
 # every child spawn — slow and fragile. Onedir shares the unpacked tree.
@@ -14,8 +14,8 @@ datas = []
 hiddenimports = []
 
 # App's own static frontend (index.html, js/, css). Bundled under
-# printshelf/static so Path(__file__).parent / "static" resolves at runtime.
-datas += [("printshelf/static", "printshelf/static")]
+# spoolhouse/static so Path(__file__).parent / "static" resolves at runtime.
+datas += [("spoolhouse/static", "spoolhouse/static")]
 
 # Heavy native deps: pull in their data files and any dynamically imported
 # submodules the static analysis would otherwise miss.
@@ -26,8 +26,8 @@ for pkg in ("pyvista", "vtkmodules", "trimesh"):
 hiddenimports += collect_submodules("vtkmodules")
 # pyvista.plotting.colors imports matplotlib at import time — must NOT be excluded.
 datas += collect_data_files("matplotlib")
-# uvicorn worker factory is imported by string ("printshelf.desktop:...").
-hiddenimports += collect_submodules("printshelf")
+# uvicorn worker factory is imported by string ("spoolhouse.desktop:...").
+hiddenimports += collect_submodules("spoolhouse")
 # pywebview's Windows backend is selected at runtime.
 hiddenimports += ["webview.platforms.winforms", "webview.platforms.edgechromium"]
 
@@ -52,7 +52,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="PrintShelf",
+    name="SpoolHouse",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -72,5 +72,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="PrintShelf",
+    name="SpoolHouse",
 )

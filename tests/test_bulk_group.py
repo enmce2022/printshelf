@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from printshelf.database import Database
+from spoolhouse.database import Database
 
 
 def test_bulk_set_group_override_assigns_to_many(

@@ -1,20 +1,20 @@
 <#
 .SYNOPSIS
-    Create (or remove) a Windows shortcut that launches PrintShelf.
+    Create (or remove) a Windows shortcut that launches SpoolHouse.
 
 .DESCRIPTION
     Builds a .lnk on the Desktop (and optionally the Start Menu) that starts the
-    PrintShelf desktop app. When the project's virtualenv exists the shortcut
+    SpoolHouse desktop app. When the project's virtualenv exists the shortcut
     targets .venv\Scripts\python.exe directly, so it launches without needing
     `uv` on PATH. If there is no venv, it falls back to `uv run python run.py`.
 
     Note: a small console window opens alongside the app window. That is
-    intentional - PrintShelf's pywebview (WinForms) window does not reliably
+    intentional - SpoolHouse's pywebview (WinForms) window does not reliably
     appear when launched without a console (pythonw.exe), so we use python.exe.
     Closing the console window quits the app.
 
 .PARAMETER Name
-    Shortcut file name (without extension). Default: "PrintShelf".
+    Shortcut file name (without extension). Default: "SpoolHouse".
 
 .PARAMETER DataDir
     Optional path passed through as --data-dir, so the shortcut always uses the
@@ -30,14 +30,14 @@
     pwsh -ExecutionPolicy Bypass -File scripts\Install-Shortcut.ps1
 
 .EXAMPLE
-    pwsh -File scripts\Install-Shortcut.ps1 -StartMenu -DataDir D:\printshelf-data
+    pwsh -File scripts\Install-Shortcut.ps1 -StartMenu -DataDir D:\spoolhouse-data
 
 .EXAMPLE
     pwsh -File scripts\Install-Shortcut.ps1 -Uninstall
 #>
 [CmdletBinding()]
 param(
-    [string]$Name = "PrintShelf",
+    [string]$Name = "SpoolHouse",
     [string]$DataDir,
     [switch]$StartMenu,
     [switch]$Uninstall
@@ -70,7 +70,7 @@ if ($Uninstall) {
 }
 
 if (-not (Test-Path $RunScript)) {
-    throw "Could not find run.py at $RunScript - is this the PrintShelf project?"
+    throw "Could not find run.py at $RunScript - is this the SpoolHouse project?"
 }
 
 # Prefer the project venv's python.exe: no need for uv on PATH. We use
@@ -95,7 +95,7 @@ if ($DataDir) {
 }
 
 # Use a custom .ico if one is shipped; otherwise the launcher's own icon is used.
-$icon = Join-Path $ProjectRoot "printshelf\static\printshelf.ico"
+$icon = Join-Path $ProjectRoot "spoolhouse\static\spoolhouse.ico"
 
 $shell = New-Object -ComObject WScript.Shell
 foreach ($lnk in $targets) {
@@ -111,4 +111,4 @@ foreach ($lnk in $targets) {
     Write-Host "Created $lnk"
 }
 
-Write-Host "`nDone. Launch PrintShelf from the '$Name' shortcut."
+Write-Host "`nDone. Launch SpoolHouse from the '$Name' shortcut."

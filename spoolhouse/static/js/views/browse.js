@@ -792,7 +792,7 @@ async function callBridge(method, ...args) {
   if (!bridge || typeof bridge[method] !== "function") {
     await messageDialog({
       title: "Desktop only",
-      message: "This action is only available when running PrintShelf as a desktop app.",
+      message: "This action is only available when running SpoolHouse as a desktop app.",
     });
     return null;
   }
