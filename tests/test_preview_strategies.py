@@ -5,13 +5,17 @@ import io
 from pathlib import Path
 
 import pytest
+import pyvista as pv
+import trimesh
 from PIL import Image
 
 from spoolhouse.preview import (
     _STRATEGIES,
+    RENDER_WINDOW_SIZE,
     GcodeEmbeddedThumbStrategy,
     GcodeToolpathStrategy,
     StlStrategy,
+    _add_feature_outline,
     generate_preview,
 )
 
@@ -50,6 +54,40 @@ def _write_gcode(path: Path, *, with_thumbnail: bool, with_motion: bool) -> None
             "G1 X0 Y0 Z0.2 E4\n"
         )
     path.write_text("".join(parts), encoding="utf-8")
+
+
+def test_stl_renders_shaded_mesh_preview(tmp_path: Path) -> None:
+    # A cube exercises the shading path that matters: every corner is a 90°
+    # crease, so normals must be split and feature edges must be extractable.
+    stl_file = tmp_path / "cube.stl"
+    trimesh.creation.box(extents=(10.0, 10.0, 10.0)).export(stl_file)
+    preview_dir = tmp_path / "previews"
+
+    name, source, indexed = generate_preview(stl_file, preview_dir, modified_at=1)
+
+    assert source == "generated-mesh"
+    assert indexed["preview_mode"] == "generated-mesh"
+    assert indexed["face_count"] == 12
+    assert indexed["watertight"] is True
+    assert indexed["bounds_mm"] == [10.0, 10.0, 10.0]
+
+    written = preview_dir / name
+    assert written.exists()
+    # The render must actually contain the model, not just transparent pixels.
+    with Image.open(written) as rendered:
+        assert rendered.size == RENDER_WINDOW_SIZE
+        assert rendered.getchannel("A").getextrema()[1] > 0
+
+
+def test_feature_outline_survives_a_mesh_with_no_sharp_edges() -> None:
+    # A sphere has no crease above the outline threshold and no open boundary,
+    # so extraction yields nothing — the overlay must no-op, not raise.
+    sphere = pv.Sphere(theta_resolution=60, phi_resolution=60)
+    plotter = pv.Plotter(off_screen=True, window_size=(64, 64))
+    try:
+        _add_feature_outline(plotter, sphere)
+    finally:
+        plotter.close()
 
 
 def test_strategy_registry_has_expected_classes() -> None:

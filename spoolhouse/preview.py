@@ -25,6 +25,34 @@ log = logging.getLogger("spoolhouse.preview")
 RENDER_WINDOW_SIZE = (640, 640)
 GCODE_MAX_SEGMENTS = 60_000
 
+# Mesh shading. Previews are transparent PNGs displayed on the app's near-white
+# card gradient, so the body sits at a mid grey to keep a silhouette of its own
+# rather than bleeding into the card.
+MESH_COLOR = "#b9c0c9"
+MESH_AMBIENT = 0.20
+MESH_DIFFUSE = 0.80
+MESH_SPECULAR = 0.24
+MESH_SPECULAR_POWER = 30
+# Normals are split above this angle so hard corners stay crisp under smooth
+# shading instead of being averaged across the crease into a melted blob.
+MESH_FEATURE_ANGLE = 30.0
+
+# Dark lines over sharp creases and open boundaries, for edge definition that
+# survives being downsampled into a grid thumbnail.
+OUTLINE_FEATURE_ANGLE = 35.0
+OUTLINE_COLOR = "#3d4650"
+OUTLINE_WIDTH = 1.1
+
+# Key / fill / rim rig. Positions are camera-relative, so a model is lit the
+# same way no matter which orientation its stable pose happens to land in. The
+# key is faintly warm and the fill faintly cool to keep planes distinguishable
+# where they meet at shallow angles.
+_LIGHT_RIG = (
+    ((-0.5, 0.7, 1.0), 1.05, (1.00, 0.98, 0.94)),
+    ((0.9, -0.2, 0.6), 0.28, (0.84, 0.89, 1.00)),
+    ((0.2, 0.6, -1.0), 0.24, (0.90, 0.94, 1.00)),
+)
+
 # Lazy, process-local plotter. Re-initialized inside each ProcessPoolExecutor
 # worker; never shared across processes. Reused across files within a worker
 # because pv.Plotter construction is the dominant per-file cost.
@@ -39,10 +67,49 @@ def _get_plotter() -> pv.Plotter:
     return _PLOTTER
 
 
+def _apply_light_rig(plotter: pv.Plotter) -> None:
+    """Install the three-point rig, replacing whatever lights are present.
+
+    VTK's own LightKit fills from every direction at once, which blows
+    highlights out to near-white and flattens the form; a directional rig keeps
+    the shading readable.
+    """
+    plotter.remove_all_lights()
+    for position, intensity, diffuse_color in _LIGHT_RIG:
+        light = pv.Light(
+            position=position, light_type="camera light", intensity=intensity
+        )
+        light.diffuse_color = diffuse_color
+        plotter.add_light(light)
+
+
+def _add_feature_outline(plotter: pv.Plotter, poly: pv.PolyData) -> None:
+    """Draw dark lines along sharp creases and open boundaries of ``poly``.
+
+    VTK leaves coincident-topology resolution off by default, so lines lying on
+    the surface lose the depth test against it and render invisibly. The mapper
+    needs an explicit polygon offset to pull them in front.
+    """
+    edges = poly.extract_feature_edges(
+        feature_angle=OUTLINE_FEATURE_ANGLE,
+        boundary_edges=True,
+        non_manifold_edges=False,
+        manifold_edges=False,
+        feature_edges=True,
+    )
+    if not edges.n_cells:
+        return
+    actor = plotter.add_mesh(
+        edges, color=OUTLINE_COLOR, line_width=OUTLINE_WIDTH, lighting=False
+    )
+    mapper = actor.mapper
+    mapper.SetResolveCoincidentTopologyToPolygonOffset()
+    mapper.SetRelativeCoincidentTopologyLineOffsetParameters(-2.0, -2.0)
+
+
 def _reset_plotter(plotter: pv.Plotter) -> None:
     plotter.clear()
-    plotter.remove_all_lights()
-    plotter.enable_lightkit()
+    _apply_light_rig(plotter)
 
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -128,13 +195,17 @@ def render_stl_preview(file_path: Path, output_path: Path) -> dict[str, Any]:
     _reset_plotter(plotter)
     plotter.add_mesh(
         poly,
-        color="#c8c8cc",
+        color=MESH_COLOR,
         smooth_shading=True,
-        specular=0.25,
-        specular_power=12,
-        ambient=0.18,
+        split_sharp_edges=True,
+        feature_angle=MESH_FEATURE_ANGLE,
+        ambient=MESH_AMBIENT,
+        diffuse=MESH_DIFFUSE,
+        specular=MESH_SPECULAR,
+        specular_power=MESH_SPECULAR_POWER,
         show_edges=False,
     )
+    _add_feature_outline(plotter, poly)
     plotter.view_isometric()
     plotter.camera.zoom(1.25)
 
