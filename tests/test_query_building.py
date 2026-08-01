@@ -175,9 +175,7 @@ def test_filter_by_group_composes_with_query_and_tag(
     assert _names(rows) == ["exhaust.stl"]
 
 
-def test_filter_by_empty_group_returns_root_items(
-    tmp_db: Database, make_item
-) -> None:
+def test_filter_by_empty_group_returns_root_items(tmp_db: Database, make_item) -> None:
     make_item(
         path="/lib/loose.stl",
         relative_path="loose.stl",
