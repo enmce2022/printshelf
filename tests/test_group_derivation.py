@@ -53,9 +53,7 @@ def _files_matchers() -> list:
         ("", ""),
     ],
 )
-def test_derive_group_path_with_exact_ignore(
-    relative_path: str, expected: str
-) -> None:
+def test_derive_group_path_with_exact_ignore(relative_path: str, expected: str) -> None:
     matchers = _files_matchers()
     assert _derive_group_path(relative_path, matchers) == expected
 
@@ -136,9 +134,7 @@ def test_invalid_json_setting_falls_back_to_default(tmp_db: Database) -> None:
     assert reopened.ignore_patterns == DEFAULT_DIRS_TO_IGNORE
 
 
-def test_ignore_patterns_change_sql_aggregation(
-    tmp_db: Database, make_item
-) -> None:
+def test_ignore_patterns_change_sql_aggregation(tmp_db: Database, make_item) -> None:
     make_item(
         path="/lib/proj_a/files/x.stl",
         relative_path="proj_a/files/x.stl",
