@@ -14,7 +14,7 @@ from typing import Any
 import uvicorn
 
 from .api import create_app
-from .service import PrintShelfService
+from .service import SpoolHouseService
 
 
 def _find_free_port() -> int:
@@ -53,7 +53,7 @@ def _wait_until_serving(url: str, timeout: float = 30.0) -> bool:
 
 
 class NativeBridge:
-    def __init__(self, service: PrintShelfService) -> None:
+    def __init__(self, service: SpoolHouseService) -> None:
         self._service = service
         self._window = None
 
@@ -109,19 +109,19 @@ class NativeBridge:
             return {"error": str(exc)}
 
 
-DEFAULT_DATA_DIR_NAME = "printshelf-data"
+DEFAULT_DATA_DIR_NAME = "spoolhouse-data"
 
 
 def resolve_data_dir(cli_value: str | None = None) -> Path:
     """Resolve the data directory, in priority order:
 
     1. Explicit CLI value (`--data-dir`).
-    2. `PRINTSHELF_DATA_DIR` environment variable.
-    3. `./printshelf-data` relative to the current working directory.
+    2. `SPOOLHOUSE_DATA_DIR` environment variable.
+    3. `./spoolhouse-data` relative to the current working directory.
 
     Tilde expansion is applied so `~/foo` works in any source.
     """
-    raw = cli_value or os.environ.get("PRINTSHELF_DATA_DIR")
+    raw = cli_value or os.environ.get("SPOOLHOUSE_DATA_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
     return (Path.cwd() / DEFAULT_DATA_DIR_NAME).resolve()
@@ -130,7 +130,7 @@ def resolve_data_dir(cli_value: str | None = None) -> Path:
 def _resolve_scan_workers(cli_value: int | None = None) -> int:
     if cli_value is not None and cli_value > 0:
         return cli_value
-    raw = os.environ.get("PRINTSHELF_SCAN_WORKERS")
+    raw = os.environ.get("SPOOLHOUSE_SCAN_WORKERS")
     if raw:
         try:
             parsed = int(raw)
@@ -144,13 +144,13 @@ def create_default_app():
     """App factory used by uvicorn worker subprocesses.
 
     Each spawned worker re-imports this module and calls this factory to build
-    its own `PrintShelfService` and FastAPI app. The data directory is read
-    from the `PRINTSHELF_DATA_DIR` env var, which `run_desktop_app` exports
+    its own `SpoolHouseService` and FastAPI app. The data directory is read
+    from the `SPOOLHOUSE_DATA_DIR` env var, which `run_desktop_app` exports
     before launching the multiprocess supervisor.
     """
     data_dir = resolve_data_dir()
     static_dir = Path(__file__).resolve().parent / "static"
-    service = PrintShelfService(data_dir=data_dir, scan_workers=_resolve_scan_workers())
+    service = SpoolHouseService(data_dir=data_dir, scan_workers=_resolve_scan_workers())
     return create_app(service=service, static_dir=static_dir)
 
 
@@ -166,7 +166,7 @@ def run_desktop_app(
     # Parent's service backs the NativeBridge (pick_folder, scan_now, ...).
     # When workers > 1, it shares the same SQLite file with the children but
     # serves no HTTP traffic itself.
-    service = PrintShelfService(data_dir=resolved_data_dir, scan_workers=scan_workers)
+    service = SpoolHouseService(data_dir=resolved_data_dir, scan_workers=scan_workers)
     port = _find_free_port()
     url = f"http://127.0.0.1:{port}"
 
@@ -175,13 +175,13 @@ def run_desktop_app(
         # Multiprocess path: uvicorn supervisor spawns N workers; each worker
         # constructs its own service via create_default_app. Cross-process scan
         # state is coordinated via the DB (run_id ownership tokens).
-        os.environ["PRINTSHELF_DATA_DIR"] = str(resolved_data_dir)
-        os.environ["PRINTSHELF_SCAN_WORKERS"] = str(scan_workers)
+        os.environ["SPOOLHOUSE_DATA_DIR"] = str(resolved_data_dir)
+        os.environ["SPOOLHOUSE_SCAN_WORKERS"] = str(scan_workers)
 
         from uvicorn.supervisors import Multiprocess
 
         config = uvicorn.Config(
-            "printshelf.desktop:create_default_app",
+            "spoolhouse.desktop:create_default_app",
             factory=True,
             host="127.0.0.1",
             port=port,
@@ -200,7 +200,7 @@ def run_desktop_app(
         # the webview so the UI never races an unready backend. If the wait
         # times out we open anyway; the frontend retries its initial load.
         if not _wait_until_serving(url):
-            logging.getLogger("printshelf").warning(
+            logging.getLogger("spoolhouse").warning(
                 "workers not serving after readiness wait; opening window anyway"
             )
     else:
@@ -222,7 +222,7 @@ def run_desktop_app(
 
             bridge = NativeBridge(service)
             window = webview.create_window(
-                title="PrintShelf",
+                title="SpoolHouse",
                 url=url,
                 js_api=bridge,
                 width=1380,
@@ -233,7 +233,7 @@ def run_desktop_app(
             webview.start()
         except Exception:
             webbrowser.open(url)
-            print(f"PrintShelf is running at {url}")
+            print(f"SpoolHouse is running at {url}")
             print("A browser window should open automatically. Press Ctrl+C to stop.")
             try:
                 while thread.is_alive():

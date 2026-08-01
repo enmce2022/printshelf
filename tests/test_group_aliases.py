@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from printshelf.database import Database
+from spoolhouse.database import Database
 
 
 def test_set_and_list_alias(tmp_db: Database) -> None:

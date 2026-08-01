@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from printshelf.scan_state import ScanRunStore
+from spoolhouse.scan_state import ScanRunStore
 
 
 def test_start_claim_progress_complete(scan_store: ScanRunStore) -> None:

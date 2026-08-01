@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from printshelf.preview import (
+from spoolhouse.preview import (
     _STRATEGIES,
     GcodeEmbeddedThumbStrategy,
     GcodeToolpathStrategy,

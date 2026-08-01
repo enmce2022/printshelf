@@ -6,8 +6,8 @@ from typing import Any, Iterator
 
 import pytest
 
-from printshelf.database import Database
-from printshelf.scan_state import ScanRunStore
+from spoolhouse.database import Database
+from spoolhouse.scan_state import ScanRunStore
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def tmp_db(tmp_path: Path) -> Iterator[Database]:
     and an in-memory db is per-connection. A tmp file gives us isolated
     state that survives across calls within one test.
     """
-    db = Database(tmp_path / "printshelf.sqlite3")
+    db = Database(tmp_path / "spoolhouse.sqlite3")
     yield db
     # Encourage prompt SQLite handle close on Windows where the tmp dir
     # cleanup will otherwise hit "file in use".

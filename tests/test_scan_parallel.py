@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from printshelf.database import Database
-from printshelf.scanner import scan_library
+from spoolhouse.database import Database
+from spoolhouse.scanner import scan_library
 
 
 def _make_png_bytes(width: int = 32, height: int = 32) -> bytes:
@@ -130,7 +130,7 @@ def test_parallel_scan_detects_deletions(tmp_path: Path) -> None:
 
 def test_parallel_scan_cancels_cleanly(tmp_path: Path) -> None:
     """Raising ScanCanceledError mid-loop must shut the pool down without hanging."""
-    from printshelf.scanner import ScanCanceledError
+    from spoolhouse.scanner import ScanCanceledError
 
     library = tmp_path / "library"
     library.mkdir()

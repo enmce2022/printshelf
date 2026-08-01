@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from printshelf.database import (
+from spoolhouse.database import (
     DEFAULT_DIRS_TO_IGNORE,
     SETTING_DIRS_TO_IGNORE_WHEN_GROUP,
     Database,

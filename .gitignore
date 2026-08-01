@@ -37,4 +37,4 @@ pip-wheel-metadata/
 # OS files
 .DS_Store
 Thumbs.db
-printshelf-data/*
+spoolhouse-data/*

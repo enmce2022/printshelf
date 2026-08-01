@@ -18,7 +18,7 @@ def configure_logging(data_dir: Path, *, level: int = logging.INFO) -> None:
 
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
-    log_path = data_dir / "printshelf.log"
+    log_path = data_dir / "spoolhouse.log"
 
     formatter = logging.Formatter(LOG_FORMAT)
     file_handler = logging.handlers.RotatingFileHandler(
@@ -34,7 +34,7 @@ def configure_logging(data_dir: Path, *, level: int = logging.INFO) -> None:
     stream_handler.setFormatter(formatter)
     stream_handler.setLevel(level)
 
-    root = logging.getLogger("printshelf")
+    root = logging.getLogger("spoolhouse")
     root.setLevel(level)
     for handler in list(root.handlers):
         root.removeHandler(handler)

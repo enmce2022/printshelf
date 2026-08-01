@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw
 # flag is process-local — no global state leaks between workers.
 pv.OFF_SCREEN = True
 
-log = logging.getLogger("printshelf.preview")
+log = logging.getLogger("spoolhouse.preview")
 
 # Render constants — kept here so future tuning lives in one place.
 RENDER_WINDOW_SIZE = (640, 640)

@@ -372,7 +372,7 @@ export function initTagsView() {
     const itemId = Number(row.dataset.itemId);
     if (!Number.isFinite(itemId)) return;
     document.dispatchEvent(
-      new CustomEvent("printshelf:open-item", { detail: { itemId } }),
+      new CustomEvent("spoolhouse:open-item", { detail: { itemId } }),
     );
   });
 }

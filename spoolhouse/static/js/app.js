@@ -139,7 +139,7 @@ async function init() {
     ]);
   });
 
-  document.addEventListener("printshelf:open-item", (event) => {
+  document.addEventListener("spoolhouse:open-item", (event) => {
     const itemId = event.detail?.itemId;
     if (!Number.isFinite(itemId)) return;
     setView("browse");

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .service import PrintShelfService
+from .service import SpoolHouseService
 
 
 class ConfigUpdate(BaseModel):
@@ -49,12 +49,12 @@ class GroupBulkAssignUpdate(BaseModel):
     group_override: str | None = None
 
 
-def create_app(service: PrintShelfService, static_dir: Path) -> FastAPI:
+def create_app(service: SpoolHouseService, static_dir: Path) -> FastAPI:
     static_dir = Path(static_dir)
     static_dir.mkdir(parents=True, exist_ok=True)
     service.preview_dir.mkdir(parents=True, exist_ok=True)
 
-    app = FastAPI(title="PrintShelf", docs_url="/api/docs", redoc_url=None)
+    app = FastAPI(title="SpoolHouse", docs_url="/api/docs", redoc_url=None)
     app.mount("/assets", StaticFiles(directory=str(static_dir)), name="assets")
     app.mount(
         "/previews", StaticFiles(directory=str(service.preview_dir)), name="previews"
