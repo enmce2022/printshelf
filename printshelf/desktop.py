@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import subprocess
@@ -20,6 +21,35 @@ def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
+
+
+def _wait_until_serving(url: str, timeout: float = 30.0) -> bool:
+    """Block until an HTTP GET to ``url`` gets a response, or ``timeout`` elapses.
+
+    Only used by the multi-worker path. The parent binds the listening socket
+    itself, so a bare TCP connect succeeds *immediately* — but requests aren't
+    actually served until a spawned worker finishes importing the app (the heavy
+    VTK/pyvista load) and starts accepting. Polling the raw port would therefore
+    lie; we issue a real request and wait for a real response. Proxies are
+    disabled so a corporate ``HTTP_PROXY`` can't intercept the loopback probe.
+
+    Returns True once a worker responds, False if the timeout is hit first.
+    """
+    import urllib.error
+    import urllib.request
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with opener.open(url, timeout=1.0):
+                return True
+        except urllib.error.HTTPError:
+            # Any HTTP status means a worker handled the request — it's serving.
+            return True
+        except (urllib.error.URLError, OSError):
+            time.sleep(0.1)
+    return False
 
 
 class NativeBridge:
@@ -164,8 +194,15 @@ def run_desktop_app(
         supervisor = Multiprocess(config, target=server.run, sockets=[sock])
         thread = threading.Thread(target=supervisor.run, daemon=True)
         thread.start()
-        # Socket is already listening; give children a moment to start accepting.
-        time.sleep(0.3)
+        # The parent already bound the listening socket, so a bare TCP connect
+        # succeeds instantly — but nothing is *served* until a spawned worker
+        # finishes importing the app. Wait for a real response before opening
+        # the webview so the UI never races an unready backend. If the wait
+        # times out we open anyway; the frontend retries its initial load.
+        if not _wait_until_serving(url):
+            logging.getLogger("printshelf").warning(
+                "workers not serving after readiness wait; opening window anyway"
+            )
     else:
         app = create_app(service=service, static_dir=static_dir)
         config = uvicorn.Config(

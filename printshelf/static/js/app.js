@@ -54,6 +54,26 @@ const queueTagSearch = debounce(() => {
     .catch((error) => toast.error(error.message));
 }, 180);
 
+// The desktop server may still be bringing a worker online when the webview
+// first loads (heavy VTK/pyvista import per worker process). The backend waits
+// for a worker before opening the window, but on a slow machine the very first
+// requests can still lose the race — so retry the initial load a few times
+// before surfacing an error, instead of leaving the UI inert with no data.
+async function retryInitial(fn, attempts = 10, delayMs = 500) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError;
+}
+
 function detectBridge() {
   const present = Boolean(window.pywebview && window.pywebview.api);
   state.hasBridge = present;
@@ -137,8 +157,8 @@ async function init() {
   setTimeout(() => clearInterval(bridgePoll), 10000);
 
   setView("browse");
-  await loadConfig();
-  await Promise.all([loadItems(), loadTags()]);
+  await retryInitial(loadConfig);
+  await Promise.all([retryInitial(loadItems), retryInitial(loadTags)]);
   const scan = await initialScanStatus();
   if (scan && ["counting", "running", "canceling"].includes(String(scan.status))) {
     ensureScanPolling();
